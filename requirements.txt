@@ -1,0 +1,14 @@
+langchain
+langchain-groq 
+langchain-openai 
+python-dotenv 
+colorama
+deepgram-sdk
+sounddevice 
+numpy 
+pyaudio
+openai 
+keyboard  
+wave
+pydub
+SpeechRecognition
