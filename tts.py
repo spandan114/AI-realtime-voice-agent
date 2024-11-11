@@ -9,7 +9,7 @@ from pathlib import Path
 import sounddevice as sd
 import soundfile as sf
 from openai import OpenAI
-from deepgram import DeepgramClient, SpeakWebSocketEvents, SpeakWSOptions
+from deepgram import DeepgramClient, SpeakOptions
 from colorama import Fore
 from abc import ABC, abstractmethod
 from typing import List, Optional
@@ -56,101 +56,39 @@ class DeepgramTTSProvider(BaseTTSProvider):
     
     def __init__(self, api_key: str):
         self.client = DeepgramClient(api_key)
-        self.model = "aura-asteria-en"
-        self.sample_rate = 16000
+        self.model = "aura-arcas-en"  # Default model
         
     def set_model(self, model: str):
+        """Set the model to use for TTS
+        Available models:
+        - aura-arcas-en
+        - aura-luna-en
+        - aura-asteria-en
+        See: https://developers.deepgram.com/docs/tts-models
+        """
         self.model = model
-        
-    def _create_wav_header(self, output_path: str):
-        """Create a WAV header for the output file"""
-        with wave.open(output_path, "wb") as header:
-            header.setnchannels(1)  # Mono audio
-            header.setsampwidth(2)  # 16-bit audio
-            header.setframerate(self.sample_rate)
-            header.writeframes(b'')  # Write empty frames to initialize the file
         
     def generate_audio(self, text: str, output_path: str) -> Optional[str]:
         try:
             print(f"{Fore.CYAN}Initializing Deepgram TTS for: {text}{Fore.RESET}")
             
-            # Create a wav file first (Deepgram outputs wav)
-            wav_path = output_path.replace('.mp3', '.wav')
-            self._create_wav_header(wav_path)
-            
-            # Event to track when audio generation is complete
-            audio_complete = threading.Event()
-            audio_failed = threading.Event()
-            
-            # Create a websocket connection
-            dg_connection = self.client.speak.websocket.v("1")
-
-            class WebSocketCallbacks:
-                def __init__(self, wav_path, audio_complete, audio_failed):
-                    self.wav_path = wav_path
-                    self.audio_complete = audio_complete
-                    self.audio_failed = audio_failed
-
-                def on_open(self, client, data):
-                    print(f"{Fore.GREEN}Deepgram WebSocket connected{Fore.RESET}")
-                
-                def on_error(self, client, error):
-                    print(f"{Fore.RED}Deepgram WebSocket error: {error}{Fore.RESET}")
-                    self.audio_failed.set()
-                
-                def on_close(self, client, data):
-                    print(f"{Fore.YELLOW}Deepgram WebSocket closed{Fore.RESET}")
-                    self.audio_complete.set()
-                
-                def on_binary_data(self, client, data):
-                    try:
-                        with open(self.wav_path, "ab") as f:
-                            f.write(data)
-                            f.flush()
-                    except Exception as e:
-                        print(f"{Fore.RED}Error writing audio data: {str(e)}{Fore.RESET}")
-                        self.audio_failed.set()
-            
-            # Initialize callbacks
-            callbacks = WebSocketCallbacks(wav_path, audio_complete, audio_failed)
-            
-            # Register event handlers
-            dg_connection.on(SpeakWebSocketEvents.Open, callbacks.on_open)
-            dg_connection.on(SpeakWebSocketEvents.Error, callbacks.on_error)
-            dg_connection.on(SpeakWebSocketEvents.Close, callbacks.on_close)
-            dg_connection.on(SpeakWebSocketEvents.AudioData, callbacks.on_binary_data)
-            
-            # Set up connection options
-            options = SpeakWSOptions(
+            # Configure options for Deepgram TTS
+            options = SpeakOptions(
                 model=self.model,
                 encoding="linear16",
-                sample_rate=self.sample_rate
+                container="wav"
             )
             
-            # Start connection
-            if not dg_connection.start(options):
-                print(f"{Fore.RED}Failed to start Deepgram connection{Fore.RESET}")
-                return None
+            # Set up speak options with the text
+            speak_options = {"text": text}
             
-            # Send text and wait for processing
-            dg_connection.send_text(text)
-            dg_connection.flush()
+            # Generate and save audio
+            response = self.client.speak.v("1").save(output_path, speak_options, options)
             
-            # Wait for audio generation to complete or timeout
-            timeout = len(text) * 0.2 + 2.0  # Adjust timeout based on text length
-            audio_complete.wait(timeout=timeout)
-            
-            if audio_failed.is_set():
-                print(f"{Fore.RED}Audio generation failed{Fore.RESET}")
-                dg_connection.finish()
-                return None
-            
-            # Close connection
-            dg_connection.finish()
-            
-            if os.path.exists(wav_path) and os.path.getsize(wav_path) > 44:  # Check if file exists and has content beyond header
-                print(f"{Fore.GREEN}Generated audio file: {wav_path}{Fore.RESET}")
-                return wav_path
+            # Verify the file was created successfully
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 44:  # WAV header is 44 bytes
+                print(f"{Fore.GREEN}Generated audio file: {output_path}{Fore.RESET}")
+                return output_path
             else:
                 print(f"{Fore.RED}No audio data was generated{Fore.RESET}")
                 return None
@@ -158,7 +96,7 @@ class DeepgramTTSProvider(BaseTTSProvider):
         except Exception as e:
             print(f"{Fore.RED}Deepgram TTS Error: {str(e)}{Fore.RESET}")
             return None
-
+        
 class TextToSpeechHandler:
     """Main TTS handler supporting multiple providers"""
     
@@ -235,21 +173,36 @@ class TextToSpeechHandler:
             try:
                 sentence = self.sentence_queue.get(timeout=1)
                 print(f"{Fore.CYAN}Processing sentence: {sentence}{Fore.RESET}")
+                
+                # Generate audio and wait for completion
                 audio_file = self._generate_audio(sentence)
                 
-                if audio_file:
+                if audio_file and os.path.exists(audio_file):
+                    # Ensure file is completely written
+                    time.sleep(0.1)  # Small delay to ensure file is ready
                     self.audio_queue.put(audio_file)
+                else:
+                    print(f"{Fore.RED}Failed to generate audio for: {sentence}{Fore.RESET}")
                 
             except queue.Empty:
                 continue
             except Exception as e:
                 print(f"{Fore.RED}Error in TTS worker: {str(e)}{Fore.RESET}")
 
+
     def _play_audio(self, audio_file: str):
         """Play a single audio file using sounddevice"""
         try:
+            # Ensure file exists and is ready
+            if not os.path.exists(audio_file):
+                print(f"{Fore.RED}Audio file not found: {audio_file}{Fore.RESET}")
+                return
+                
             print(f"{Fore.GREEN}Playing audio file: {audio_file}{Fore.RESET}")
             self.is_playing.set()
+            
+            # Small delay to ensure file is ready
+            time.sleep(0.1)
             
             # Load the audio file
             data, samplerate = sf.read(audio_file)

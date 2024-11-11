@@ -18,7 +18,7 @@ class AssistantManager:
         self.transcriber = AudioTranscriber(self.deepgram_key, model='deepgram')
         self.response_generator = ResponseGenerator(provider='openai')  # Supported providers: 'openai' or 'groq'
         self.processor = AudioProcessor(transcriber=self.transcriber)
-        self.tts_handler = TextToSpeechHandler(provider_name="openai")
+        self.tts_handler = TextToSpeechHandler(provider_name="deepgram")
         self.stop_event = Event()
         self.is_processing = False
 
