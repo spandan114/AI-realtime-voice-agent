@@ -3,6 +3,8 @@ import logging
 from colorama import Fore, init
 from datetime import datetime
 from io import BytesIO
+from queue import Queue
+from threading import Thread, Event
 
 # Initialize colorama
 init()
@@ -20,6 +22,8 @@ class AudioProcessor:
         
         self.is_recording = False
         self.full_transcription = []
+        self.transcription_queue = Queue()
+        self.stop_event = Event()
 
     def record_and_process(self):
         """Record and process audio continuously using buffer."""
@@ -29,7 +33,7 @@ class AudioProcessor:
                 self.recognizer.adjust_for_ambient_noise(source, duration=1)
                 print(f"{Fore.GREEN}Ready to record. Press Ctrl+C to stop.{Fore.RESET}")
 
-                while self.is_recording:
+                while not self.stop_event.is_set():
                     try:
                         print(f"{Fore.CYAN}Listening...{Fore.RESET}")
                         # Listen for audio
@@ -45,6 +49,9 @@ class AudioProcessor:
                             if transcription and transcription.strip():
                                 self.full_transcription.append(transcription.strip())
                                 print(f"{Fore.GREEN}Current: {transcription}{Fore.RESET}")
+                                # Add transcription to queue for processing
+                                self.transcription_queue.put(transcription.strip())
+                                
                         except Exception as e:
                             print(f"{Fore.RED}Transcription error: {e}{Fore.RESET}")
                         
@@ -62,12 +69,17 @@ class AudioProcessor:
     def start(self):
         """Start recording and processing audio."""
         print(f"\n{Fore.GREEN}Starting audio recording...{Fore.RESET}")
-        self.is_recording = True
-        self.record_and_process()
+        self.stop_event.clear()
+        # Start recording in a separate thread
+        self.recording_thread = Thread(target=self.record_and_process)
+        self.recording_thread.start()
+        return self.transcription_queue
 
     def stop(self):
         """Stop recording and display final transcription."""
-        self.is_recording = False
+        self.stop_event.set()
+        if hasattr(self, 'recording_thread'):
+            self.recording_thread.join()
         
         # Display complete transcription
         print(f"\n{Fore.GREEN}=== Complete Transcription ==={Fore.RESET}")
