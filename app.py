@@ -4,6 +4,7 @@ from recorder import AudioProcessor
 from transcription import AudioTranscriber
 from llm import ResponseGenerator
 from tts import TextToSpeechHandler
+from timing_utils import ProcessTimer
 import colorama
 from colorama import Fore
 from threading import Thread, Event
@@ -14,11 +15,14 @@ import time
 class AssistantManager:
     def __init__(self):
         load_dotenv()
+
+        self.timer = ProcessTimer()
+
         self.deepgram_key = os.getenv("DEEPGRAM_API_KEY")
-        self.transcriber = AudioTranscriber(self.deepgram_key, model='deepgram')
-        self.response_generator = ResponseGenerator(provider='openai')  # Supported providers: 'openai' or 'groq'
+        self.transcriber = AudioTranscriber(self.deepgram_key, model='deepgram', timer=self.timer)
+        self.response_generator = ResponseGenerator(provider='openai', timer=self.timer)  # Supported providers: 'openai' or 'groq'
         self.processor = AudioProcessor(transcriber=self.transcriber)
-        self.tts_handler = TextToSpeechHandler(provider_name="deepgram")
+        self.tts_handler = TextToSpeechHandler(provider_name="openai", timer=self.timer)
         self.stop_event = Event()
         self.is_processing = False
 
@@ -36,12 +40,18 @@ class AssistantManager:
                     # Generate response
                     print(f"\n{Fore.CYAN}=== Generating Response for: {transcription} ==={Fore.RESET}")
                     try:
+                        self.timer.start("response_generation")
                         response = self.response_generator.get_response(transcription)
+                        self.timer.stop("response_generation")
+
                         print(f"\n{Fore.GREEN}=== AI Response ==={Fore.RESET}")
                         print(f"{Fore.YELLOW}{response}{Fore.RESET}")
 
                         # Convert response to speech
                         self.tts_handler.speak(response)
+
+                        # Print timing metrics after processing is complete
+                        self.timer.print_metrics()
 
                     except Exception as e:
                         print(f"{Fore.RED}Error generating response: {str(e)}{Fore.RESET}")

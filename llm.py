@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from timing_utils import time_process
 from abc import ABC, abstractmethod
 from openai import OpenAI
 from groq import Groq
@@ -58,7 +58,8 @@ class GroqProvider(BaseLLMProvider):
 class ResponseGenerator:
     """Main class for handling LLM responses"""
     
-    def __init__(self, provider: str = "groq"):
+    def __init__(self, provider: str = "groq", timer=None):
+        self.timer = timer
         self.provider = self._initialize_provider(provider)
         
     def _initialize_provider(self, provider: str) -> BaseLLMProvider:
@@ -79,6 +80,7 @@ class ResponseGenerator:
             
         return provider_class(api_key)
     
+    @time_process("response_generation")
     def get_response(self, text: str) -> str:
         """Generate response using the configured LLM provider"""
         try:

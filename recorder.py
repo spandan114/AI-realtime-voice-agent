@@ -1,7 +1,5 @@
 import speech_recognition as sr
-import logging
 from colorama import Fore, init
-from datetime import datetime
 from io import BytesIO
 from queue import Queue
 from threading import Thread, Event
