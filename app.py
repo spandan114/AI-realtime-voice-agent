@@ -40,9 +40,8 @@ class AssistantManager:
                     # Generate response
                     print(f"\n{Fore.CYAN}=== Generating Response for: {transcription} ==={Fore.RESET}")
                     try:
-                        self.timer.start("response_generation")
+
                         response = self.response_generator.get_response(transcription)
-                        self.timer.stop("response_generation")
 
                         print(f"\n{Fore.GREEN}=== AI Response ==={Fore.RESET}")
                         print(f"{Fore.YELLOW}{response}{Fore.RESET}")

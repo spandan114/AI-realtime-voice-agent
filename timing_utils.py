@@ -129,16 +129,84 @@ class ProcessTimer:
             json.dump(metrics_data, f, indent=2)
 
 # Timer decorator for easy timing of functions
+"""
+How it works step by step:
+
+1. When you decorate a method with @time_process("some_name"):
+   - The decorator is initialized with the process_name
+   - The method is wrapped with the timing functionality
+
+2. When the decorated method is called:
+   - wrapper() function executes first
+   - It checks if the class instance (self) has a timer
+   - If timer exists:
+     a. Records start time via timer.start()
+     b. Executes the original method
+     c. Records end time via timer.stop()
+     d. Returns the method's result
+   - If no timer:
+     - Just runs the original method without timing
+
+3. The timing data is stored in ProcessTimer's metrics dictionary:
+   self.metrics = {
+       "process_name": [
+           TimingMetric(
+               start_time=1234.5,    # When process started
+               end_time=1236.7,      # When process ended
+               duration=2.2          # Total time taken
+           ),
+           # One TimingMetric for each time the method is called
+       ]
+   }
+
+4. You can view the timing results using:
+   instance.timer.print_metrics()
+"""
 def time_process(process_name: str):
+    """
+    A decorator that measures the execution time of class methods.
+    
+    This decorator works with classes that have a 'timer' attribute (instance of ProcessTimer).
+    It automatically tracks the start and end times of the decorated method and stores the timing metrics.
+    
+    Args:
+        process_name (str): Name identifier for the process being timed (e.g., "audio_generation")
+        
+    Example usage:
+        class MyClass:
+            def __init__(self):
+                self.timer = ProcessTimer()
+                
+            @time_process("my_process")
+            def my_method(self):
+                # Method code here
+                pass
+    """
+    # Level 1: Outer function that takes the process name as parameter
     def decorator(func):
+        # Level 2: Takes the function to be decorated
+        # @wraps preserves the original function's metadata (name, docstring, etc.)
         @wraps(func)
+        # Level 3: Wrapper that handles the actual function call
+        # args[0] is 'self' in class methods
+        # Check if the class instance has a timer attribute
         def wrapper(*args, **kwargs):
             if hasattr(args[0], 'timer'):
+                # Get the ProcessTimer instance from the class
                 timer = args[0].timer
+                # Start timing this process
+                # This adds a new TimingMetric to ProcessTimer.metrics[process_name]
                 timer.start(process_name)
+                # Execute the actual function with its arguments
+                # If method is my_method(self, x, y), then:
+                # args[0] is self
+                # args[1:] would be x, y
+                # kwargs would be any named parameters
                 result = func(*args, **kwargs)
                 timer.stop(process_name)
                 return result
             return func(*args, **kwargs)
         return wrapper
     return decorator
+
+
