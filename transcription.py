@@ -25,10 +25,15 @@ import logging
 from colorama import Fore
 from openai import OpenAI
 from groq import Groq
+from faster_whisper import WhisperModel
 from deepgram import DeepgramClient, PrerecordedOptions
 from io import BytesIO
 from timing_utils import time_process
 from pydub import AudioSegment
+from vosk import Model, KaldiRecognizer, SetLogLevel
+import tempfile
+import os
+import wave
 
 class AudioTranscriber:
     """
@@ -43,14 +48,16 @@ class AudioTranscriber:
     for compatibility.
     """
     
-    def __init__(self, api_key, model='openai', timer=None):
+    def __init__(self, api_key, model='faster-whisper', device='cpu', compute_type='float32', timer=None):
         """
         Initialize the transcriber with specified provider.
         
         Args:
             api_key (str): API key for the selected service
-            model (str): Provider name - 'openai', 'groq', or 'deepgram'
+            model (str): Provider name - faster-whisper, 'openai', 'groq', or 'deepgram'
         """
+        self.device = device
+        self.compute_type = compute_type
         self.api_key = api_key
         self.model = model.lower()
         self.timer = timer
@@ -64,9 +71,16 @@ class AudioTranscriber:
             ValueError: If an unsupported model is specified
         """
         providers = {
+            'faster-whisper': lambda: WhisperModel(
+                model_size_or_path="large-v3",
+                device=self.device,
+                compute_type=self.compute_type
+            ),
             'openai': lambda: OpenAI(api_key=self.api_key),
             'groq': lambda: Groq(api_key=self.api_key),
-            'deepgram': lambda: DeepgramClient(self.api_key)
+            'deepgram': lambda: DeepgramClient(self.api_key),
+            'vosk': lambda: Model(lang="en-us"),
+
         }
         
         if self.model not in providers:
@@ -138,9 +152,11 @@ class AudioTranscriber:
             
             # Route to appropriate provider
             transcription_methods = {
+                'faster-whisper': self._transcribe_buffer_with_faster_whisper,
                 'openai': self._transcribe_buffer_with_openai,
                 'groq': self._transcribe_buffer_with_groq,
-                'deepgram': self._transcribe_buffer_with_deepgram
+                'deepgram': self._transcribe_buffer_with_deepgram,
+                'vosk': self._transcribe_buffer_with_vosk,
             }
             
             if self.model not in transcription_methods:
@@ -151,6 +167,40 @@ class AudioTranscriber:
         except Exception as e:
             logging.error(f"{Fore.RED}Failed to transcribe audio buffer: {e}{Fore.RESET}")
             raise
+
+    def _transcribe_buffer_with_vosk(self, audio_buffer):
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_wav:
+                wav_buffer = BytesIO()
+                audio_segment = AudioSegment.from_mp3(BytesIO(audio_buffer.read()))
+                audio_segment.export(wav_buffer, format='wav')
+                wav_buffer.seek(0)
+                temp_wav.write(wav_buffer.read())
+                temp_wav_path = temp_wav.name
+
+            with wave.open(temp_wav_path, "rb") as wf:
+                recognizer = KaldiRecognizer(self.client, wf.getframerate())
+                recognizer.SetWords(True)
+
+                results = []
+                while True:
+                    data = wf.readframes(4000)
+                    if len(data) == 0:
+                        break
+                    if recognizer.AcceptWaveform(data):
+                        part_result = json.loads(recognizer.Result())
+                        results.append(part_result.get('text', ''))
+
+                part_result = json.loads(recognizer.FinalResult())
+                results.append(part_result.get('text', ''))
+
+            os.unlink(temp_wav_path)
+            return ' '.join(filter(None, results))
+
+        except Exception as e:
+            logging.error(f"{Fore.RED}Vosk transcription error: {str(e)}{Fore.RESET}")
+            raise
+
 
     def _transcribe_buffer_with_openai(self, audio_buffer):
         """
@@ -175,6 +225,26 @@ class AudioTranscriber:
             return transcription.text
         except Exception as e:
             logging.error(f"{Fore.RED}OpenAI transcription error: {str(e)}{Fore.RESET}")
+            raise
+
+    def _transcribe_buffer_with_faster_whisper(self, audio_buffer):
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                temp_file.write(audio_buffer.read())
+                temp_path = temp_file.name
+            
+            segments, _ = self.client.transcribe(
+                temp_path,
+                language="en",
+                beam_size=5,
+                word_timestamps=True
+            )
+            
+            os.unlink(temp_path)
+            return " ".join([segment.text for segment in segments])
+        
+        except Exception as e:
+            logging.error(f"{Fore.RED}faster-whisper transcription error: {str(e)}{Fore.RESET}")
             raise
 
     def _transcribe_buffer_with_groq(self, audio_buffer):

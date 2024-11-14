@@ -19,7 +19,7 @@ class AssistantManager:
         self.timer = ProcessTimer()
 
         self.api_key = os.getenv("OPENAI_API_KEY")
-        self.transcriber = AudioTranscriber(self.api_key, model='openai', timer=self.timer)
+        self.transcriber = AudioTranscriber(self.api_key, model='vosk', timer=self.timer)
         self.response_generator = ResponseGenerator(provider='openai', timer=self.timer)  # Supported providers: 'openai' or 'groq'
         self.processor = AudioProcessor(transcriber=self.transcriber)
         self.tts_handler = TextToSpeechHandler(provider_name="openai", timer=self.timer)

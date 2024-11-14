@@ -15,3 +15,5 @@ SpeechRecognition
 playsound==1.2.2
 soundfile
 tabulate
+webrtcvad
+faster-whisper
