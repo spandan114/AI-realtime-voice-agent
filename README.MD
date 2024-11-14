@@ -2,6 +2,12 @@
 
 Real-time voice-to-voice communication API using FastAPI and Socket.IO. This project enables bidirectional audio streaming between clients and an AI assistant, featuring real-time transcription, natural language processing, and text-to-speech capabilities.
 
+## How to start
+
+```
+uvicorn main:app --reload
+```
+
 ## 🏗️ Project Structure
 
 ```

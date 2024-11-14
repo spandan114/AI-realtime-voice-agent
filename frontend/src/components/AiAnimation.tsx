@@ -15,7 +15,7 @@ interface ColorPalette {
 }
 
 const BlobAnimation: React.FC<BlobAnimationProps> = ({
-  primaryColor = '#6ee7b7',
+  primaryColor = "#6ee7b7",
   backgroundColor = '#242424',
   size = 'min(20vw, 20vh)'
 }) => {

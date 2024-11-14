@@ -1,10 +1,24 @@
-import { useState } from "react";
+// import { useState } from "react";
 import { TbMicrophone } from "react-icons/tb";
 import { FaStopCircle } from "react-icons/fa";
 import BlobAnimation from "./components/AiAnimation";
+import { useVoiceRecorder } from "./hooks/useVoiceRecorder";
 
 function App() {
-  const [isMicrophoneOn, setIsMicrophoneOn] = useState(false);
+
+  const { isRecording, error, startRecording, stopRecording } = useVoiceRecorder({
+    onAudioData: (data) => console.log(data)
+  });
+
+  const handleStartRecording = () => {
+    // connect();
+    startRecording();
+  };
+
+  const handleStopRecording = () => {
+    stopRecording();
+    // disconnect();
+  };
 
   return (
     <div className="container">
@@ -17,7 +31,7 @@ function App() {
           solution.
         </p>
 
-        {isMicrophoneOn ? (
+        {isRecording ? (
           <BlobAnimation
             primaryColor="#6ee7b7"
             backgroundColor="#242424"
@@ -28,7 +42,7 @@ function App() {
             <button
               className="mic-button"
               aria-label="Activate voice input"
-              onClick={() => setIsMicrophoneOn(true)}
+              onClick={() => handleStartRecording()}
             >
               <TbMicrophone className="mic-icon" />
             </button>
@@ -36,12 +50,15 @@ function App() {
         )}
 
         <button className="cta-message">
-          {isMicrophoneOn ? "I'm listening..." : "hit record! 🎯"}
+          {isRecording ? "I'm listening..." : "hit record! 🎯"}
         </button>
-        {isMicrophoneOn ? (
+        <p>
+          {error ? "error" : null}
+        </p>
+        {isRecording ? (
           <button
             className="stop-button"
-            onClick={() => setIsMicrophoneOn(false)}
+            onClick={() => handleStopRecording()}
           >
             <FaStopCircle />
           </button>
