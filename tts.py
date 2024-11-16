@@ -368,3 +368,43 @@ class TextToSpeechHandler:
                 print(f"{Fore.YELLOW}Removed empty audio directory: {self.audio_dir}{Fore.RESET}")
         except Exception as e:
             print(f"{Fore.RED}Error removing audio directory: {str(e)}{Fore.RESET}")
+
+    def clear_queues(self):
+        """Clear all queues and stop current playback"""
+        print(f"{Fore.YELLOW}Clearing TTS queues...{Fore.RESET}")
+        
+        # Stop current playback
+        if self.is_playing.is_set():
+            sd.stop()
+            self.is_playing.clear()
+        
+        # Clear sentence queue
+        while not self.sentence_queue.empty():
+            try:
+                self.sentence_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        # Clear audio queue and delete files
+        while not self.audio_queue.empty():
+            try:
+                audio_file = self.audio_queue.get_nowait()
+                if audio_file and os.path.exists(audio_file):
+                    try:
+                        os.remove(audio_file)
+                        print(f"{Fore.YELLOW}Deleted queued audio file: {audio_file}{Fore.RESET}")
+                    except Exception as e:
+                        print(f"{Fore.RED}Error deleting audio file {audio_file}: {e}{Fore.RESET}")
+            except queue.Empty:
+                break
+
+        # Clean up any remaining audio files in directory
+        try:
+            for file in self.audio_dir.glob("*.*"):
+                try:
+                    os.remove(file)
+                    print(f"{Fore.YELLOW}Deleted remaining audio file: {file}{Fore.RESET}")
+                except Exception as e:
+                    print(f"{Fore.RED}Error deleting file {file}: {e}{Fore.RESET}")
+        except Exception as e:
+            print(f"{Fore.RED}Error cleaning audio directory: {e}{Fore.RESET}")

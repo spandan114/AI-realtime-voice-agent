@@ -145,7 +145,6 @@ class AudioTranscriber:
             ValueError: If unsupported transcription model
             Exception: Provider-specific errors
         """
-        print("Transcription generation started...")
         try:
             # Convert input WAV to MP3
             mp3_buffer = self._convert_wav_to_mp3(audio_buffer.getvalue())
