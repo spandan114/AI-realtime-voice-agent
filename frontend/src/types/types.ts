@@ -1,6 +1,6 @@
 export interface VoiceConfig {
     sampleRate?: number;
-    silenceThreshold?: number;
     silenceTimeout?: number;
+    chunkSize?: number;
     onAudioData?: (data: Blob) => void;
   }

@@ -3,21 +3,48 @@ import { TbMicrophone } from "react-icons/tb";
 import { FaStopCircle } from "react-icons/fa";
 import BlobAnimation from "./components/AiAnimation";
 import { useVoiceRecorder } from "./hooks/useVoiceRecorder";
+import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
 
-  const { isRecording, error, startRecording, stopRecording } = useVoiceRecorder({
-    onAudioData: (data) => console.log(data)
+  const {  error:socketError, connect, disconnect, sendMessage } = useWebSocket({
+    url: "ws://localhost:8000/ws/audio",
+    onOpen: () => console.log("Connected!"),
+    onMessage: (data) => console.log("Received:", data),
+    onError: (error) => console.error("WebSocket error:", error),
+    onClose: () => console.log("Disconnected!")
+  });
+
+  const { isRecording, error: recorderError, startRecording, stopRecording } = useVoiceRecorder({
+    onAudioData: (data) => {
+      // if (isConnected) {
+        data.arrayBuffer().then(buffer => {
+          try {
+            // Get the raw audio data
+            const audioData = new Uint8Array(buffer);
+            console.log('Raw audio data size:', audioData.length);
+            
+            // Send the raw audio data directly
+            sendMessage(audioData);
+          } catch (err) {
+            console.error('Error sending audio data:', err);
+          }
+        });
+      // }
+    }
   });
 
   const handleStartRecording = () => {
-    // connect();
-    startRecording();
+    connect(); // Connect WebSocket first
+    // Wait for connection before starting recording
+    // if (isConnected) {
+      startRecording();
+    // }
   };
 
   const handleStopRecording = () => {
     stopRecording();
-    // disconnect();
+    disconnect(); // Disconnect from WebSocket
   };
 
   return (
@@ -53,7 +80,10 @@ function App() {
           {isRecording ? "I'm listening..." : "hit record! 🎯"}
         </button>
         <p>
-          {error ? "error" : null}
+          {recorderError ? recorderError : null}
+        </p>
+        <p>
+          {socketError ? socketError : null}
         </p>
         {isRecording ? (
           <button
