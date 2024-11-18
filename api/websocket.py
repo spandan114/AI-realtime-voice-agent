@@ -3,10 +3,14 @@ from fastapi.websockets import WebSocket, WebSocketDisconnect
 from services.websocket_manager import ConnectionManager
 from config.logging import logger
 from utils.save_audio import AudioSaver
+from core.audio_transcriber import AudioTranscriber
+from config.settings import Settings
+
 
 router = APIRouter()
 manager = ConnectionManager()
-audio_saver = AudioSaver()
+# audio_saver = AudioSaver()
+setting = Settings()
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -24,6 +28,10 @@ async def websocket_endpoint(websocket: WebSocket):
 @router.websocket("/ws/audio")
 async def audio_websocket_endpoint(websocket: WebSocket):
     current_filename = None
+
+    # Initialize the transcription engine
+    # Pass api_key in case of openai , groq or deepgram
+    transcriber = AudioTranscriber(model="vosk")
     
     await manager.connect(websocket)
     try:
@@ -36,11 +44,19 @@ async def audio_websocket_endpoint(websocket: WebSocket):
             # Convert audio chunk to the right format if needed
             # If it's already in the correct format (PCM WAV), you can write directly
             try:
-                # Write the chunk to the WAV file
-                audio_saver.write_chunk(audio_chunk)
+
+                # Sava audio file, Write the chunk to the WAV file
+                # audio_saver.write_chunk(audio_chunk)
+
+                # Transcribe the audio chunk
+                transcription = transcriber.transcribe_buffer(audio_chunk)
+                logger.info(f"Transcription: {transcription}")
+                
+                # Send transcription back to client
+                # await websocket.send_text(f"Transcription: {transcription}")
                 
                 # Optionally send confirmation back to client
-                await websocket.send_text(f"Chunk saved to {current_filename}")
+                # await websocket.send_text(f"Chunk saved to {current_filename}")
                 
             except Exception as e:
                 logger.error(f"Error processing audio chunk: {e}")

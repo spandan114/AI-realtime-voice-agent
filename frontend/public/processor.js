@@ -1,7 +1,7 @@
 class AudioProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    this.chunkSize = options.processorOptions.chunkSize || 4096;
+    this.chunkSize = options.processorOptions.chunkSize || 16384;
     this.sampleRate = options.processorOptions.sampleRate || 16000;
     this.buffer = new Float32Array(this.chunkSize);
     this.bufferIndex = 0;
@@ -18,7 +18,8 @@ class AudioProcessor extends AudioWorkletProcessor {
       this.buffer[this.bufferIndex++] = channel[i];
       
       // When buffer is full, send it
-      if (this.bufferIndex >= this.buffer.length) {
+      // if (this.bufferIndex >= this.buffer.length) {
+      if (this.bufferIndex >= this.chunkSize) {
         this.port.postMessage(this.buffer.slice());
         this.bufferIndex = 0;
       }

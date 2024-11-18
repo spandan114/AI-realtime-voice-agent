@@ -36,6 +36,7 @@ const vadFilter = (analyser: React.MutableRefObject<AnalyserNode | null>): boole
   }
 };
 
+
 export const useVoiceRecorder = ({
   // Sample rate determines how many samples per second are taken from the analog signal
   // 16kHz (16000 samples/sec) is standard for speech recognition
@@ -82,7 +83,6 @@ export const useVoiceRecorder = ({
       const source = audioContext.current.createMediaStreamSource(stream);
       source.connect(analyser.current);
 
-      try {
         // Try to use AudioWorklet for precise, low-latency audio processing
         await audioContext.current.audioWorklet.addModule("processor.js");
         const audioWorkletNode = new AudioWorkletNode(
@@ -91,13 +91,13 @@ export const useVoiceRecorder = ({
           {
             processorOptions: {
               sampleRate,
-              // chunkSize of 4096 means we process audio in chunks of 4096 samples
+              // chunkSize of 8192 means we process audio in chunks of 8192 samples
               // At 16kHz, this is about 256ms of audio
               // This is a good balance between:
               // - Processing overhead (larger chunks = less overhead)
               // - Latency (smaller chunks = less delay)
               // - VAD accuracy (need enough samples to detect speech)
-              chunkSize: 4096,
+              chunkSize: 20480,
             },
           }
         );
@@ -107,51 +107,27 @@ export const useVoiceRecorder = ({
 
         // Handle audio data from the worklet
         audioWorkletNode.port.onmessage = (event) => {
-          const audioData = event.data;
+          const audioData = event.data; // Float32Array
           if (audioData && audioData.length > 0) {
-            // Convert from Float32 (-1 to 1) to Int16 (-32768 to 32767)
-            // This is standard format for WAV files
-            const pcmData = new Int16Array(audioData.length);
-            for (let i = 0; i < audioData.length; i++) {
-              const s = Math.max(-1, Math.min(1, audioData[i]));
-              pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-            }
-
-            // Create WAV blob
-            const wavBlob = new Blob([pcmData.buffer], {
-              type: "audio/wav",
-            });
-
-            // Only send audio data if voice is detected
+            // Perform VAD check before processing
             if (vadFilter(analyser)) {
-              onAudioData?.(wavBlob);
+              // Convert Float32 (-1 to 1) to Int16 (-32768 to 32767)
+              const pcmData = new Int16Array(audioData.length);
+              for (let i = 0; i < audioData.length; i++) {
+                const s = Math.max(-1, Math.min(1, audioData[i])); // Clamp values
+                pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7fff; // Scale to Int16
+              }
+        
+              // Create PCM blob
+              const pcmBlob = new Blob([pcmData.buffer], { type: "audio/pcm" });
+        
+              // Send PCM blob to callback
+              onAudioData?.(pcmBlob);
             }
           }
         };
-
-      } catch (err) {
-        console.log(err);
-        // Fallback to MediaRecorder if AudioWorklet isn't supported
-        console.warn("AudioWorklet failed, falling back to MediaRecorder");
-
-        const options = {
-          mimeType: "audio/webm;codecs=opus",  // Use Opus codec for good compression
-          audioBitsPerSecond: 16 * 1000,       // 16kbps is good for speech
-        };
-
-        mediaRecorder.current = new MediaRecorder(stream, options);
         
-        // Handle recorded chunks
-        mediaRecorder.current.ondataavailable = (event) => {
-          if (event.data.size > 0 && vadFilter(analyser)) {
-            onAudioData?.(event.data);
-          }
-        };
 
-        // Calculate time slice for consistent chunk size
-        const timeSlice = Math.floor((4096 / sampleRate) * 1000);
-        mediaRecorder.current.start(timeSlice);
-      }
 
       setIsRecording(true);
       setError(null);
@@ -164,6 +140,8 @@ export const useVoiceRecorder = ({
   };
 
   // Cleanup function to stop recording and release resources
+  
+
   const stopRecording = useCallback(() => {
     if (mediaRecorder.current) {
       mediaRecorder.current.stop();
