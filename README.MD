@@ -24,6 +24,18 @@ voice-agent/
 └── tests/                    # Test suite
 ```
 
+This architecture can be called:
+
+**Event-Driven Real-Time Audio Processing Architecture with Kafka.**
+
+### Key Features:
+1. **Event-Driven**: The architecture revolves around the events of receiving audio chunks, processing them, and responding in real-time.
+2. **Real-Time**: It is designed to minimize latency, ensuring conversational interactions.
+3. **Audio Processing**: Handles audio streams, transcription, LLM responses, and TTS generation efficiently.
+4. **Kafka Integration**: Leverages Kafka as a distributed messaging system for decoupling producers (transcription, LLM responses) and consumers (TTS workers and WebSocket response handlers).
+5. **Scalable**: Kafka allows seamless horizontal scaling, supporting large numbers of simultaneous users.
+6. **Resilient**: Kafka ensures message durability, fault tolerance, and retry mechanisms, reducing the risk of data loss.
+
 ### Directory Details
 
 - **config/**: Configuration and environment settings

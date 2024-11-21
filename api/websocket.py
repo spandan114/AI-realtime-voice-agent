@@ -1,21 +1,20 @@
 from fastapi import APIRouter
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from services.websocket_manager import ConnectionManager
-from config.logging import logger
+from config.logging import get_logger
 from config.settings import Settings
 # from utils.save_audio import AudioSaver
 from core.audio_transcriber import AudioTranscriber
 from core.response_generator import ResponseGenerator
 from utils.silence_detector import WebRTCVAD
+from utils.redis_manager import RedisManager 
 import asyncio
 
+logger = get_logger(__name__)
 router = APIRouter()
 manager = ConnectionManager()
-response_generator = ResponseGenerator()
 # audio_saver = AudioSaver()
 setting = Settings()
-
-
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -30,11 +29,15 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         await manager.disconnect(websocket)
 
-
-@router.websocket("/ws/audio")
+ 
+@router.websocket("/ws/audio/{client_id}")
 async def audio_websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
 
+    redis_manager = RedisManager()  # Get singleton instance
+    response_generator = ResponseGenerator(provider="groq", connection_manager=redis_manager)
+    
+
+    await manager.connect(websocket)
     # Initialize WebRTC VAD
     vad = WebRTCVAD(mode=3)  # Most aggressive speech detection
     transcriber = AudioTranscriber(model="vosk")
@@ -43,6 +46,7 @@ async def audio_websocket_endpoint(websocket: WebSocket):
     last_speech_time = asyncio.get_event_loop().time()
 
     try:
+
         while True:
             # Receive audio chunk
             audio_chunk = await manager.receive_audio(websocket)
@@ -71,7 +75,7 @@ async def audio_websocket_endpoint(websocket: WebSocket):
                     logger.info(f"Sending to LLM: {full_transcription}")
 
                     # Generate LLM response (example placeholder)
-                    response_generator.process_response(full_transcription)
+                    await response_generator.process_response(full_transcription)
                     # llm_response = await generate_llm_response(full_transcription)
 
                     # Send response back to the client

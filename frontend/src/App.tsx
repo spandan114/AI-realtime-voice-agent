@@ -8,7 +8,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 function App() {
 
   const {  error:socketError, connect, disconnect, sendMessage } = useWebSocket({
-    url: "ws://localhost:8000/ws/audio",
+    url: "ws://localhost:8000/ws/audio/1",
     onOpen: () => console.log("Connected!"),
     onMessage: (data) => console.log("Received:", data),
     onError: (error) => console.error("WebSocket error:", error),
@@ -59,7 +59,7 @@ function App() {
         </p>
 
         {isRecording ? (
-          <BlobAnimation
+           <BlobAnimation
             primaryColor="#6ee7b7"
             backgroundColor="#242424"
             size="20vh"

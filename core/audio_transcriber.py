@@ -208,7 +208,6 @@ class AudioTranscriber:
             logger.error(f"{Fore.RED}Vosk transcription error: {str(e)}{Fore.RESET}")
             raise type(e)(f"Vosk transcription error: {str(e)}") from e
 
-
     def _transcribe_buffer_with_openai(self, audio_buffer):
         """
         Transcribe audio using OpenAI's Whisper model.

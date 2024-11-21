@@ -13,7 +13,8 @@ uvicorn
 websockets
 pydantic
 pydantic-settings
-redis 
-rq
 pydub
 vosk
+webrtcvad
+confluent-kafka 
+kafka-python

@@ -1,15 +1,19 @@
 import os
+import time
 from utils.sentence_processor import SentenceProcessor
 from colorama import Fore
 from utils.llm_providers import BaseLLMProvider, OpenAIProvider, GroqProvider
+from config.logging import get_logger
+from utils.queue_manager import QueueManager
 
+logger = get_logger(__name__)
 
 class ResponseGenerator:
     """Main class for handling LLM responses"""
     
-    def __init__(self, provider: str = "groq", timer=None):
-        self.timer = timer
+    def __init__(self,connection_manager, provider: str = "groq"):
         self.provider = self._initialize_provider(provider)
+        self.queue_manager = QueueManager(connection_manager)
         
     def _initialize_provider(self, provider: str) -> BaseLLMProvider:
         """Initialize the specified LLM provider"""
@@ -29,7 +33,7 @@ class ResponseGenerator:
             
         return provider_class(api_key)
     
-    def process_response(self, text: str) -> None:
+    async def process_response(self, text: str) -> None:
         """Process streaming response and add complete sentences to queue"""
         try:
             processor = SentenceProcessor()
@@ -37,7 +41,6 @@ class ResponseGenerator:
             
             # Process streaming response
             for chunk in self.provider.generate_response_stream(text):
-                print(chunk, end='', flush=True)  # Display in real-time
                 full_response.append(chunk)
                 
                 # Process chunk into sentences
@@ -45,17 +48,29 @@ class ResponseGenerator:
                 
                 # Add complete sentences to queue
                 for sentence in sentences:
-                    print(f"\n{Fore.GREEN}Queueing sentence for TTS: {sentence}{Fore.RESET}")
-                    # sentence_queue.put(sentence)
+                    logger.info(f"{Fore.GREEN}Send sentence for TTS: {sentence}{Fore.RESET}")
+                    # Push message to redis queue
+                    await self.queue_manager.put("1", {
+                        "type": "sentence",
+                        "content": sentence,
+                        "timestamp": int(time.time())
+                    })
+                    
             
             # Handle any remaining complete sentence
             remaining = processor.get_remaining()
             if remaining:
-                print(f"\n{Fore.GREEN}Queueing final sentence: {remaining}{Fore.RESET}")
-                # sentence_queue.put(remaining)
+                logger.info(f"{Fore.GREEN}Send final sentence: {remaining}{Fore.RESET}")
+                # Push message to redis queue
+                await self.queue_manager.put("1", {
+                    "type": "sentence",
+                    "content": remaining,
+                    "timestamp": int(time.time())
+                })
+                
+                
             
-            print(f"\n{Fore.GREEN}Complete response: {''.join(full_response)}{Fore.RESET}")
+            logger.info(f"{Fore.GREEN}Complete response: {''.join(full_response)}{Fore.RESET}")
             
         except Exception as e:
-            print(f"{Fore.RED}Error generating response: {str(e)}{Fore.RESET}")
-            # sentence_queue.put("I encountered an error processing your request.")
+            logger.error(f"{Fore.RED}Error generating response: {str(e)}{Fore.RESET}")
