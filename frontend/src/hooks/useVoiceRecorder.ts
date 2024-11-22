@@ -97,7 +97,7 @@ export const useVoiceRecorder = ({
               // - Processing overhead (larger chunks = less overhead)
               // - Latency (smaller chunks = less delay)
               // - VAD accuracy (need enough samples to detect speech)
-              chunkSize: 20480,
+              chunkSize: 8192,
             },
           }
         );

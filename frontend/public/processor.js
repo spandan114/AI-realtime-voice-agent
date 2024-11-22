@@ -1,7 +1,7 @@
 class AudioProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    this.chunkSize = options.processorOptions.chunkSize || 16384;
+    this.chunkSize = options.processorOptions.chunkSize || 8192;
     this.sampleRate = options.processorOptions.sampleRate || 16000;
     this.buffer = new Float32Array(this.chunkSize);
     this.bufferIndex = 0;

@@ -23,10 +23,17 @@ class OpenAIProvider(BaseLLMProvider):
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a helpful voice assistant. Keep responses concise and natural. Always use complete sentences with proper punctuation."},
+                    {"role": "system", "content": """You are a natural conversational AI assistant. Follow these rules:
+            - Use contractions and informal language (I'm, don't, let's)
+            - Keep responses brief (1-2 sentences when possible)
+            - Include conversational fillers sparingly ("well", "you know", "hmm")
+            - Use dynamic intonation markers (? ! ...)
+            - Express empathy and personality through tone
+            - Break complex information into digestible chunks
+            - Adapt speaking style to match user's formality level"""},
                     {"role": "user", "content": text}
                 ],
-                temperature=0.7,
+                temperature=0.8,
                 stream=True
             )
             
@@ -48,11 +55,17 @@ class GroqProvider(BaseLLMProvider):
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a helpful voice assistant. Keep responses concise and natural. Always use complete sentences with proper punctuation."},
+                    {"role": "system", "content": """You are a natural conversational AI assistant. Follow these rules:
+            - Use contractions and informal language (I'm, don't, let's)
+            - Keep responses brief (1-2 sentences when possible)
+            - Include conversational fillers sparingly ("well", "you know", "hmm")
+            - Use dynamic intonation markers (? ! ...)
+            - Express empathy and personality through tone
+            - Break complex information into digestible chunks
+            - Adapt speaking style to match user's formality level"""},
                     {"role": "user", "content": text}
                 ],
-                temperature=0.7,
-                max_tokens=150,
+                temperature=0.8,
                 stream=True
             )
             
