@@ -23,6 +23,11 @@ class QueueManager:
         if result:
             return json.loads(result[1])
         return None
+    
+    async def get_length(self, user_id: str) -> int:
+        """Get the current length of the queue"""
+        queue_key = self.get_queue_key(user_id)
+        return await self.redis_client.llen(queue_key)
 
     async def clear_user_queue(self, user_id: str):
         queue_key = self.get_queue_key(user_id)

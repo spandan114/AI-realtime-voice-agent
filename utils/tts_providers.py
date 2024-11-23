@@ -1,120 +1,9 @@
-# import os
-# from openai import OpenAI
-# from deepgram import DeepgramClient, SpeakOptions
-# from colorama import Fore
-# from abc import ABC, abstractmethod
-# from typing import Optional
-
-
-# class BaseTTSProvider(ABC):
-#     """
-#     Abstract base class defining the interface for TTS providers.
-#     Any new TTS provider must implement the generate_audio method.
-#     """
-    
-#     @abstractmethod
-#     def generate_audio(self, text: str, output_path: str) -> Optional[str]:
-#         """
-#         Generate audio from text and save to file.
-        
-#         Args:
-#             text: Text to convert to speech
-#             output_path: Where to save the audio file
-            
-#         Returns:
-#             Path to generated audio file or None if generation failed
-#         """
-#         pass
-
-# class OpenAITTSProvider(BaseTTSProvider):
-#     """
-#     OpenAI's Text-to-Speech implementation.
-#     Supports multiple voices and adjustable speech speed.
-#     """
-    
-#     def __init__(self, api_key: str):
-#         self.client = OpenAI(api_key=api_key)
-#         self.voice = "alloy"  # Default voice
-#         self.speed = 1.1      # Slightly faster than normal
-        
-#     def set_voice(self, voice: str):
-#         """
-#         Set the voice to use for TTS.
-#         Available voices: alloy, echo, fable, onyx, nova, shimmer
-#         """
-#         if voice in ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]:
-#             self.voice = voice
-    
-#     def generate_audio(self, text: str, output_path: str) -> Optional[str]:
-#         """Generate audio using OpenAI's TTS API"""
-#         try:
-#             response = self.client.audio.speech.create(
-#                 model="tts-1",
-#                 voice=self.voice,
-#                 input=text,
-#                 speed=self.speed
-#             )
-            
-#             response.stream_to_file(output_path)
-#             print(f"{Fore.GREEN}Generated audio file: {output_path}{Fore.RESET}")
-#             return output_path
-            
-#         except Exception as e:
-#             print(f"{Fore.RED}OpenAI TTS Error: {str(e)}{Fore.RESET}")
-#             return None
-
-# class DeepgramTTSProvider(BaseTTSProvider):
-#     """
-#     Deepgram's Text-to-Speech implementation.
-#     Supports multiple voice models optimized for different use cases.
-#     """
-    
-#     def __init__(self, api_key: str):
-#         self.client = DeepgramClient(api_key)
-#         self.model = "aura-arcas-en"  # Default model
-        
-#     def set_model(self, model: str):
-#         """
-#         Set the model to use for TTS.
-#         Available models:
-#         - aura-arcas-en: General purpose
-#         - aura-luna-en: Optimized for long-form content
-#         - aura-asteria-en: Optimized for natural conversation
-#         """
-#         self.model = model
-        
-#     def generate_audio(self, text: str, output_path: str) -> Optional[str]:
-#         """Generate audio using Deepgram's TTS API"""
-#         try:
-#             print(f"{Fore.CYAN}Initializing Deepgram TTS for: {text}{Fore.RESET}")
-            
-#             options = SpeakOptions(
-#                 model=self.model,
-#                 encoding="linear16",
-#                 container="wav"
-#             )
-            
-#             speak_options = {"text": text}
-#             response = self.client.speak.v("1").save(output_path, speak_options, options)
-            
-#             # Verify file was created successfully (WAV header is 44 bytes)
-#             if os.path.exists(output_path) and os.path.getsize(output_path) > 44:
-#                 print(f"{Fore.GREEN}Generated audio file: {output_path}{Fore.RESET}")
-#                 return output_path
-#             else:
-#                 print(f"{Fore.RED}No audio data was generated{Fore.RESET}")
-#                 return None
-                
-#         except Exception as e:
-#             print(f"{Fore.RED}Deepgram TTS Error: {str(e)}{Fore.RESET}")
-#             return None
-  
-
-import asyncio
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator
 from openai import AsyncOpenAI
 from deepgram import DeepgramClient, SpeakOptions
+import asyncio
+import math
 
 class AsyncBaseTTSProvider(ABC):
     @abstractmethod
@@ -127,13 +16,44 @@ class AsyncOpenAITTSProvider(AsyncBaseTTSProvider):
         self.voice = "alloy"
         
     async def generate_audio_stream(self, text: str) -> AsyncGenerator[bytes, None]:
-        response = await self.client.audio.speech.create(
-            model="tts-1",
-            voice=self.voice,
-            input=text,
-        )
-        async for chunk in response.iter_bytes(chunk_size=1024):
-            yield chunk
+        try:
+            response = await self.client.audio.speech.create(
+                model="tts-1",
+                voice=self.voice,
+                input=text,
+            )
+            
+            # Get the raw bytes from the response
+            audio_data = response.content
+
+            # Optimal chunk size calculation
+            # 16KB chunks - better for modern networks and browsers
+            # This balances between network efficiency and playback smoothness
+            CHUNK_SIZE = 16 * 1024  # 16KB
+            
+            # Calculate optimal sleep time based on audio duration and chunks
+            total_chunks = math.ceil(len(audio_data) / CHUNK_SIZE)
+            
+            # Assuming 24kHz sample rate for OpenAI TTS
+            # Calculate approximate audio duration (in seconds)
+            audio_duration = len(audio_data) / (24000 * 2)  # 24kHz * 16bit
+            
+            # Calculate sleep time between chunks
+            # Slightly faster than real-time to account for network latency
+            sleep_time = (audio_duration / total_chunks) * 0.5
+            
+            for i in range(0, len(audio_data), CHUNK_SIZE):
+                chunk = audio_data[i:i + CHUNK_SIZE]
+                if chunk:
+                    yield chunk
+                    # Dynamic sleep time for smoother playback
+                    await asyncio.sleep(sleep_time)
+                
+                    
+        except Exception as e:
+            print(f"Error in OpenAI TTS: {str(e)}")
+            raise
+
 
 class AsyncDeepgramTTSProvider(AsyncBaseTTSProvider):
     def __init__(self, api_key: str):
@@ -141,11 +61,18 @@ class AsyncDeepgramTTSProvider(AsyncBaseTTSProvider):
         self.model = "aura-arcas-en"
         
     async def generate_audio_stream(self, text: str) -> AsyncGenerator[bytes, None]:
-        options = SpeakOptions(
-            model=self.model,
-            encoding="linear16",
-            container="wav"
-        )
-        response = await self.client.speak.v("1").stream({"text": text}, options)
-        async for chunk in response:
-            yield chunk
+        try:
+            options = SpeakOptions(
+                model=self.model,
+                encoding="linear16",
+                container="wav"
+            )
+            
+            async for chunk in await self.client.speak.v("1").stream({"text": text}, options):
+                if chunk:  # Only yield if there's data
+                    yield chunk
+                    await asyncio.sleep(0.01)  # Small delay to prevent flooding
+                    
+        except Exception as e:
+            print(f"Error in Deepgram TTS: {str(e)}")
+            raise

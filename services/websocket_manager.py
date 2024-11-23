@@ -18,7 +18,7 @@ class ConnectionManager:
 
     async def broadcast(self, message: str):
         for connection in self.active_connections:
-            await connection.send_text(message)
+            await connection.send_json(message)
 
     async def send_audio(self, websocket: WebSocket, audio_data: bytes):
         await websocket.send_bytes(audio_data)

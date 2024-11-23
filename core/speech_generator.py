@@ -23,95 +23,137 @@ Architecture:
             [Audio Queue] → Playback Worker → Plays and deletes files
 """
 
-import time
 import os
-from pathlib import Path
+import asyncio
 from colorama import Fore
-from typing import Optional
-from utils.tts_providers import BaseTTSProvider, OpenAITTSProvider, DeepgramTTSProvider
+from utils.tts_providers import AsyncBaseTTSProvider, AsyncOpenAITTSProvider, AsyncDeepgramTTSProvider
 from services.websocket_manager import ConnectionManager
+from config.logging import get_logger
+import base64
+from typing import Optional
+from fastapi.websockets import WebSocket
 
-websocket = ConnectionManager()
+logger = get_logger(__name__)
 
 class TextToSpeechHandler:
-    """
-    Main TTS handler that coordinates the entire TTS pipeline:
-    1. Text input → Sentence splitting
-    2. Sentence queue → TTS processing
-    3. Audio queue → Playback and cleanup
-    """
-    
-    def __init__(self, provider_name: str = "openai",timer=None, **kwargs):
+    def __init__(self, provider_name: str = "openai", timer=None, **kwargs):
         self.timer = timer
-        # Initialize the chosen TTS provider
         self.provider = self._setup_provider(provider_name, **kwargs)
+        self.websocket_manager = ConnectionManager()
+        self.is_streaming = False
+        self.streaming_complete = asyncio.Event()  # Add completion event
         
-        # Create directory for temporary audio files
-        self.audio_dir = Path.cwd() / "audio_files"
-        self.audio_dir.mkdir(exist_ok=True)
-        print(f"{Fore.CYAN}Audio directory created at: {self.audio_dir}{Fore.RESET}")
-        
-
-    def _setup_provider(self, provider_name: str, **kwargs) -> BaseTTSProvider:
-        """
-        Set up the requested TTS provider with appropriate configuration.
-        
-        Args:
-            provider_name: Either 'openai' or 'deepgram'
-            **kwargs: Provider-specific settings (api_key, voice, model)
-            
-        Returns:
-            Configured TTS provider instance
-        """
+    def _setup_provider(self, provider_name: str, **kwargs) -> AsyncBaseTTSProvider:
         providers = {
-            "openai": OpenAITTSProvider,
-            "deepgram": DeepgramTTSProvider
+            "openai": AsyncOpenAITTSProvider,
+            "deepgram": AsyncDeepgramTTSProvider
         }
         
         if provider_name not in providers:
             raise ValueError(f"Unsupported provider: {provider_name}")
         
-        # Get API key from kwargs or environment variables
         api_key = kwargs.get('api_key') or os.getenv(f"{provider_name.upper()}_API_KEY")
         if not api_key:
             raise ValueError(f"Missing API key for {provider_name}")
         
-        # Initialize provider
         provider = providers[provider_name](api_key)
         
-        # Configure provider-specific settings
         if provider_name == "openai" and "voice" in kwargs:
-            provider.set_voice(kwargs['voice'])
+            provider.voice = kwargs['voice']
         elif provider_name == "deepgram" and "model" in kwargs:
-            provider.set_model(kwargs['model'])
+            provider.model = kwargs['model']
             
         return provider
 
-    def _generate_audio(self, text: str) -> Optional[str]:
+    async def stream_audio(self, text: str, websocket: WebSocket) -> bool:
         """
-        Generate audio file for a single sentence.
+        Stream audio chunks and return True when complete
+        """
+        if not text.strip():
+            logger.warning("Empty text provided for streaming")
+            return False
+
+        self.is_streaming = True
+        self.streaming_complete.clear()  # Reset completion event
+        chunk_count = 0
         
-        Creates a uniquely named audio file using timestamp and counter
-        to avoid conflicts when processing multiple sentences quickly.
-        """
         try:
-            timestamp = time.strftime("%Y%m%d-%H%M%S")
-            file_count = len(list(self.audio_dir.glob("*.*")))
+            logger.info(f"Starting audio stream for text: {text[:50]}...")
             
-            # Use appropriate extension based on provider
-            extension = ".wav" if isinstance(self.provider, DeepgramTTSProvider) else ".mp3"
-            filename = f"speech_{timestamp}_{file_count}{extension}"
-            output_path = self.audio_dir / filename
+            await websocket.send_json({
+                "type": "audio_stream_start",
+                "text": text
+            })
             
-            print(f"{Fore.CYAN}Generating audio file: {output_path}{Fore.RESET}")
-            return self.provider.generate_audio(text, str(output_path))
+            async for chunk in self.provider.generate_audio_stream(text):
+                if not self.is_streaming:
+                    logger.info("Streaming was stopped")
+                    break
+                    
+                if chunk:
+                    chunk_count += 1
+                    base64_chunk = base64.b64encode(chunk).decode('utf-8')
+                    
+                    await websocket.send_json({
+                        "type": "audio_chunk",
+                        "data": base64_chunk,
+                        "chunk_number": chunk_count
+                    })
+                    
+                    await asyncio.sleep(0.01)
             
+            if self.is_streaming:
+                await websocket.send_json({
+                    "type": "audio_stream_end",
+                    "total_chunks": chunk_count
+                })
+                
+                # Wait for client to confirm playback completion
+                await asyncio.sleep(0.1)  # Small buffer for network latency
+                logger.info(f"Successfully streamed {chunk_count} audio chunks")
+                return True
+                
         except Exception as e:
-            print(f"{Fore.RED}Error generating audio: {str(e)}{Fore.RESET}")
-            return None
-        
+            logger.error(f"Error streaming audio: {str(e)}")
+            await websocket.send_json({
+                "type": "audio_stream_error",
+                "error": str(e),
+                "chunk_number": chunk_count
+            })
+            return False
+            
+        finally:
+            self.is_streaming = False
+            self.streaming_complete.set()  # Signal completion
+
+        return False
+
+
+
+    async def stop_streaming(self) -> None:
+        """
+        Stop the current audio stream
+        """
+        self.is_streaming = False
+        await self.websocket_manager.broadcast({
+            "type": "audio_stream_stopped"
+        })
+
     async def process_text(self, text: str) -> None:
         """
-        Process a text input and generate audio for each sentence.
+        Process text input and stream audio to connected clients
         """
-        await websocket.broadcast("llm_response")
+        try:
+            # Stop any existing stream
+            if self.is_streaming:
+                await self.stop_streaming()
+                await asyncio.sleep(0.1)  # Small delay to ensure cleanup
+                
+            await self.stream_audio(text)
+            
+        except Exception as e:
+            logger.error(f"Error processing text: {str(e)}")
+            await self.websocket_manager.broadcast({
+                "type": "error",
+                "error": str(e)
+            })

@@ -33,12 +33,12 @@ class ResponseGenerator:
             
         return provider_class(api_key)
     
-    async def process_response(self, text: str) -> None:
+    async def process_response(self, text: str, user_id: str) -> None:
         """Process streaming response and add complete sentences to queue"""
         try:
             processor = SentenceProcessor()
             full_response = []
-            
+
             # Process streaming response
             for chunk in self.provider.generate_response_stream(text):
                 full_response.append(chunk)
@@ -50,7 +50,7 @@ class ResponseGenerator:
                 for sentence in sentences:
                     logger.info(f"{Fore.GREEN}Send sentence for TTS: {sentence}{Fore.RESET}")
                     # Push message to redis queue
-                    await self.queue_manager.put("1", {
+                    await self.queue_manager.put(user_id, {
                         "type": "sentence",
                         "content": sentence,
                         "timestamp": int(time.time())
@@ -62,7 +62,7 @@ class ResponseGenerator:
             if remaining:
                 logger.info(f"{Fore.GREEN}Send final sentence: {remaining}{Fore.RESET}")
                 # Push message to redis queue
-                await self.queue_manager.put("1", {
+                await self.queue_manager.put(user_id, {
                     "type": "sentence",
                     "content": remaining,
                     "timestamp": int(time.time())

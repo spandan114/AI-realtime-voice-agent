@@ -95,7 +95,7 @@ class AudioTranscriber:
         if self.model not in providers:
             raise ValueError(f"Unsupported model: {self.model}")
             
-        self.client = providers[self.model]()
+        self.client:OpenAI | Groq | DeepgramClient = providers[self.model]()
 
     def _pcm_to_wav(self, pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2) -> BytesIO:
         """
@@ -232,7 +232,8 @@ class AudioTranscriber:
             transcription = self.client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_buffer,
-                language='en'
+                language='en',
+                temperature=0.8
             )
             return transcription.text
         except Exception as e:
@@ -284,7 +285,8 @@ class AudioTranscriber:
             transcription = self.client.audio.transcriptions.create(
                 model="whisper-large-v3",
                 file=audio_buffer,
-                language='en'
+                language='en',
+                temperature=0.8
             )
             return transcription.text
         except Exception as e:

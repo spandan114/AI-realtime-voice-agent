@@ -1,4 +1,4 @@
-// import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { TbMicrophone } from "react-icons/tb";
 import { FaStopCircle } from "react-icons/fa";
 import BlobAnimation from "./components/AiAnimation";
@@ -6,46 +6,150 @@ import { useVoiceRecorder } from "./hooks/useVoiceRecorder";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [streamError, setStreamError] = useState('');
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioQueueRef = useRef<string[]>([]); // Store audio chunks as ref
+  const isProcessingRef = useRef(false); // Track if we're currently processing audio
 
-  const {  error:socketError, connect, disconnect, sendMessage } = useWebSocket({
+  // Initialize AudioContext lazily
+  const getAudioContext = () => {
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioContextRef.current;
+  };
+
+  // Resume AudioContext if suspended
+  const ensureAudioContext = async () => {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    return ctx;
+  };
+
+  const { error: socketError, connect, disconnect, sendMessage } = useWebSocket({
     url: "ws://localhost:8000/ws/audio/1",
     onOpen: () => console.log("Connected!"),
-    onMessage: (data) => console.log("Received:", data),
-    onError: (error) => console.error("WebSocket error:", error),
+    onMessage: handleWebSocketMessage,
+    onError: (error) => {
+      console.error("WebSocket error:", error);
+      setStreamError("Connection error occurred");
+    },
     onClose: () => console.log("Disconnected!")
   });
 
-  const { isRecording, error: recorderError, startRecording, stopRecording } = useVoiceRecorder({
+  const { error: recorderError, startRecording, stopRecording } = useVoiceRecorder({
     onAudioData: (data) => {
-      // if (isConnected) {
-        data.arrayBuffer().then(buffer => {
-          try {
-            // Get the raw audio data
-            const audioData = new Uint8Array(buffer);
-            console.log('Raw audio data size:', audioData.length);
-            
-            // Send the raw audio data directly
-            sendMessage(audioData);
-          } catch (err) {
-            console.error('Error sending audio data:', err);
-          }
-        });
-      // }
+      data.arrayBuffer().then(buffer => {
+        try {
+          const audioData = new Uint8Array(buffer);
+          console.log('Sending audio data, size:', audioData.length);
+          sendMessage(audioData);
+        } catch (err) {
+          console.error('Error sending audio data:', err);
+          setStreamError('Failed to send audio data');
+        }
+      });
     }
   });
 
-  const handleStartRecording = () => {
-    connect(); // Connect WebSocket first
-    // Wait for connection before starting recording
-    // if (isConnected) {
+  async function handleWebSocketMessage(message: string) {
+    try {
+      const data = JSON.parse(message);
+
+      if (data.type === 'audio_chunk') {
+        // Add chunk to the queue
+        audioQueueRef.current.push(data.data);
+        
+        // Start processing if not already processing
+        if (!isProcessingRef.current) {
+          processNextChunk();
+        }
+      } else if (data.type === 'audio_stream_end') {
+        console.log("Audio stream complete");
+      } else if (data.type === 'audio_stream_error') {
+        console.error("Stream error:", data.error);
+        setStreamError(data.error);
+      }
+    } catch (err) {
+      console.error("Error processing WebSocket message:", err);
+    }
+  }
+
+  // Process audio chunks sequentially
+  const processNextChunk = async () => {
+    if (isProcessingRef.current || audioQueueRef.current.length === 0) {
+      return;
+    }
+
+    isProcessingRef.current = true;
+    setIsPlaying(true);
+
+    try {
+      const audioContext = await ensureAudioContext();
+      const chunk = audioQueueRef.current.shift()!;
+      
+      // Decode and play audio
+      const binary = atob(chunk);
+      const buffer = Uint8Array.from(binary, char => char.charCodeAt(0)).buffer;
+      const audioBuffer = await audioContext.decodeAudioData(buffer);
+
+      const bufferSource = audioContext.createBufferSource();
+      bufferSource.buffer = audioBuffer;
+      bufferSource.connect(audioContext.destination);
+
+      // Handle completion
+      bufferSource.onended = () => {
+        isProcessingRef.current = false;
+        setIsPlaying(false);
+
+        // Process next chunk if available
+        if (audioQueueRef.current.length > 0) {
+          processNextChunk();
+        }
+      };
+
+      bufferSource.start(0);
+    } catch (err) {
+      console.error("Error playing audio chunk:", err);
+      isProcessingRef.current = false;
+      setIsPlaying(false);
+    }
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      await ensureAudioContext();
+      setStreamError('');
+      audioQueueRef.current = []; // Clear previous audio chunks
+      isProcessingRef.current = false;
+      
+      connect();
       startRecording();
-    // }
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Error starting recording:', err);
+      setStreamError('Failed to start recording');
+    }
   };
 
   const handleStopRecording = () => {
     stopRecording();
-    disconnect(); // Disconnect from WebSocket
+    disconnect();
+    setIsRecording(false);
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+      }
+    };
+  }, []);
 
   return (
     <div className="container">
@@ -59,7 +163,7 @@ function App() {
         </p>
 
         {isRecording ? (
-           <BlobAnimation
+          <BlobAnimation
             primaryColor="#6ee7b7"
             backgroundColor="#242424"
             size="20vh"
@@ -69,7 +173,8 @@ function App() {
             <button
               className="mic-button"
               aria-label="Activate voice input"
-              onClick={() => handleStartRecording()}
+              onClick={handleStartRecording}
+              disabled={isPlaying}
             >
               <TbMicrophone className="mic-icon" />
             </button>
@@ -79,20 +184,40 @@ function App() {
         <button className="cta-message">
           {isRecording ? "I'm listening..." : "hit record! 🎯"}
         </button>
-        <p>
-          {recorderError ? recorderError : null}
-        </p>
-        <p>
-          {socketError ? socketError : null}
-        </p>
-        {isRecording ? (
+
+        {isPlaying && (
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse" />
+            <span>Playing Audio...</span>
+          </div>
+        )}
+        
+        {streamError && (
+          <div className="text-red-500">
+            {streamError}
+          </div>
+        )}
+
+        {recorderError && (
+          <p className="text-red-500">
+            {recorderError}
+          </p>
+        )}
+        
+        {socketError && (
+          <p className="text-red-500">
+            {socketError}
+          </p>
+        )}
+
+        {isRecording && (
           <button
             className="stop-button"
-            onClick={() => handleStopRecording()}
+            onClick={handleStopRecording}
           >
             <FaStopCircle />
           </button>
-        ) : null}
+        )}
       </div>
     </div>
   );
