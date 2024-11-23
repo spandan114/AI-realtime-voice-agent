@@ -17,7 +17,7 @@ manager = ConnectionManager()
 # audio_saver = AudioSaver()
 setting = Settings()
 vad = WebRTCVAD(mode=3)
-transcriber = AudioTranscriber(model="vosk")
+transcriber = AudioTranscriber(model="groq", api_key=setting.GROQ_API_KEY)
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

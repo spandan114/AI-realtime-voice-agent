@@ -18,19 +18,8 @@ class AudioStreamManager:
         self.vad = vad
         self.transcriber = transcriber
         self.manager = manager
-        self.tts_generator = TextToSpeechHandler(model="openai")
+        self.tts_generator = TextToSpeechHandler(provider_name="deepgram")
         self.current_message = None
-
-    # async def process_queue(self, client_id: str, websocket: WebSocket):
-    #     while True:
-    #         try:
-    #             message = await self.queue_manager.get(client_id)
-    #             if message and message['type'] == 'sentence':
-    #                 await self.tts_generator.stream_audio(message['content'], websocket)
-    #                 # await websocket.send_bytes(message["content"])
-    #         except Exception as e:
-    #             logger.error(f"Queue error for {client_id}: {e}")
-    #             await asyncio.sleep(0.1)
 
     async def process_queue(self, client_id: str, websocket: WebSocket):
         """
@@ -90,9 +79,10 @@ class AudioStreamManager:
                 audio_chunk = await self.manager.receive_audio(websocket)
                 current_time = asyncio.get_event_loop().time()
 
-                if self.vad.is_speech(audio_chunk):
+                if not self.vad.is_low_energy(audio_chunk, threshold=0.01) and self.vad.is_speech(audio_chunk):
                     last_speech_time = current_time
                     transcription = self.transcriber.transcribe_buffer(audio_chunk)
+                    
                     if transcription.strip():
                         buffer.append(transcription)
 

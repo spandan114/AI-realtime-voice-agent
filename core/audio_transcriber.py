@@ -24,10 +24,9 @@ import json
 from colorama import Fore
 from openai import OpenAI
 from groq import Groq
-from faster_whisper import WhisperModel
 from deepgram import DeepgramClient, PrerecordedOptions
 from io import BytesIO
-from vosk import Model, KaldiRecognizer, SetLogLevel
+from vosk import Model, KaldiRecognizer
 import tempfile
 import os
 import wave
@@ -80,11 +79,6 @@ class AudioTranscriber:
             ValueError: If an unsupported model is specified
         """
         providers = {
-            'faster-whisper': lambda: WhisperModel(
-                model_size_or_path="large-v3",
-                device=self.device,
-                compute_type=self.compute_type
-            ),
             'openai': lambda: OpenAI(api_key=self.api_key),
             'groq': lambda: Groq(api_key=self.api_key),
             'deepgram': lambda: DeepgramClient(self.api_key),
@@ -144,7 +138,6 @@ class AudioTranscriber:
 
             # Route to appropriate provider
             transcription_methods = {
-                'faster-whisper': self._transcribe_buffer_with_faster_whisper,
                 'openai': self._transcribe_buffer_with_openai,
                 'groq': self._transcribe_buffer_with_groq,
                 'deepgram': self._transcribe_buffer_with_deepgram,
@@ -232,33 +225,14 @@ class AudioTranscriber:
             transcription = self.client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_buffer,
-                language='en',
-                temperature=0.8
+                language='en'
             )
+
             return transcription.text
         except Exception as e:
             logger.error(f"{Fore.RED}OpenAI transcription error: {str(e)}{Fore.RESET}")
             raise type(e)(f"OpenAI transcription error: {str(e)}") from e
 
-    def _transcribe_buffer_with_faster_whisper(self, audio_buffer):
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
-                temp_file.write(audio_buffer.read())
-                temp_path = temp_file.name
-            
-            segments, _ = self.client.transcribe(
-                temp_path,
-                language="en",
-                beam_size=5,
-                word_timestamps=True
-            )
-            
-            os.unlink(temp_path)
-            return " ".join([segment.text for segment in segments])
-        
-        except Exception as e:
-            logger.error(f"{Fore.RED}faster-whisper transcription error: {str(e)}{Fore.RESET}")
-            raise type(e)(f"faster-whisper transcription error: {str(e)}") from e
 
     def _transcribe_buffer_with_groq(self, audio_buffer):
         """
@@ -285,8 +259,7 @@ class AudioTranscriber:
             transcription = self.client.audio.transcriptions.create(
                 model="whisper-large-v3",
                 file=audio_buffer,
-                language='en',
-                temperature=0.8
+                language='en'
             )
             return transcription.text
         except Exception as e:

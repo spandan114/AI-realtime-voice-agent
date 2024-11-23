@@ -76,6 +76,6 @@ class RedisManager:
 
         self.stop_event.clear()
 
-    def stop(self):
+    async def stop(self):
         self.stop_event.set()
-        self.redis_client.close()
+        await self.redis_client.close()

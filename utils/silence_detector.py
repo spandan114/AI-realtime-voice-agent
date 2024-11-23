@@ -1,4 +1,8 @@
 import webrtcvad
+import numpy as np
+from config.logging import get_logger
+
+logger = get_logger(__name__)
 
 class WebRTCVAD:
     def __init__(self, mode=3):
@@ -52,3 +56,9 @@ class WebRTCVAD:
             if len(frame) == self.frame_size:  # Ignore incomplete frames
                 frames.append(frame)
         return frames
+    
+    def is_low_energy(self, audio_chunk, threshold=0.01):
+        """Check if audio chunk has low energy."""
+        audio = np.frombuffer(audio_chunk, dtype=np.int16)
+        energy = np.sqrt(np.mean(audio**2))
+        return energy < threshold

@@ -120,6 +120,7 @@ class TextToSpeechHandler:
                 "error": str(e),
                 "chunk_number": chunk_count
             })
+            
             return False
             
         finally:
