@@ -69,55 +69,92 @@ class AsyncDeepgramTTSProvider:
         self.model = "aura-asteria-en"
 
     async def generate_audio_stream(self, text: str) -> AsyncGenerator[bytes, None]:
-        """Generate streaming audio from text using REST API"""
+        """Generate streaming audio from text using async REST API"""
         try:
-            # Configure options
             options = SpeakOptions(
-                model=self.model,
-                encoding="linear16",
-                container="wav"
+                model=self.model
             )
 
-            # Get streaming response
-            response = self.client.speak.rest.v("1").stream_raw(
+            CHUNK_SIZE = 16 * 1024  # 16KB chunks
+            current_chunk = b''
+            
+            response = await self.client.speak.asyncrest.v("1").stream_raw(
                 {"text": text}, 
                 options
             )
 
-            # Collect all audio data
-            audio_data = b''
-            for chunk in response.iter_bytes():
-                audio_data += chunk
-
-            # Close the response after collecting data
-            response.close()
-
-            # Optimal chunk size for modern networks and browsers
-            CHUNK_SIZE = 48 * 1024  # 16KB chunks
-            
-            # Calculate total chunks
-            total_chunks = math.ceil(len(audio_data) / CHUNK_SIZE)
-            
-            # Assuming 16kHz sample rate for Deepgram (model specific)
-            # Calculate approximate audio duration (in seconds)
-            # 16-bit audio = 2 bytes per sample
-            audio_duration = len(audio_data) / (16000 * 2)  
-            
-            # Calculate sleep time between chunks
-            # Use 0.5x multiplier for slightly faster than real-time delivery
-            sleep_time = (audio_duration / total_chunks) * 0.7
-            
-            logger.info(f"Audio duration: {audio_duration:.2f}s, "
-                       f"Chunks: {total_chunks}, "
-                       f"Sleep time: {sleep_time:.4f}s")
-
-            # Stream chunks with proper timing
-            for i in range(0, len(audio_data), CHUNK_SIZE):
-                chunk = audio_data[i:i + CHUNK_SIZE]
+            async for chunk in response.aiter_bytes():
                 if chunk:
-                    yield chunk
-                    await asyncio.sleep(sleep_time)
+                    current_chunk += chunk
+                    while len(current_chunk) >= CHUNK_SIZE:
+                        yield current_chunk[:CHUNK_SIZE]
+                        current_chunk = current_chunk[CHUNK_SIZE:]
+                        await asyncio.sleep(0.05)  # Fixed sleep time for consistent delivery
+
+            # Send any remaining data
+            if current_chunk:
+                yield current_chunk
+
+            await response.aclose()
 
         except Exception as e:
             logger.error(f"Error in Deepgram audio stream: {str(e)}")
             raise
+
+# class AsyncDeepgramTTSProvider:
+#     def __init__(self, api_key: str):
+#         config = DeepgramClientOptions()
+#         self.client = DeepgramClient(api_key, config)
+#         self.model = "aura-asteria-en"
+
+#     async def generate_audio_stream(self, text: str) -> AsyncGenerator[bytes, None]:
+#         """Generate streaming audio from text using REST API"""
+#         try:
+#             # Configure options
+#             options = SpeakOptions(
+#                 model=self.model
+#             )
+
+#             # Get streaming response
+#             response = self.client.speak.rest.v("1").stream_raw(
+#                 {"text": text}, 
+#                 options
+#             )
+
+#             # Collect all audio data
+#             audio_data = b''
+#             for chunk in response.iter_bytes():
+#                 audio_data += chunk
+
+#             # Close the response after collecting data
+#             response.close()
+
+#             # Optimal chunk size for modern networks and browsers
+#             CHUNK_SIZE = 16 * 1024  # 16KB chunks
+            
+#             # Calculate total chunks
+#             total_chunks = math.ceil(len(audio_data) / CHUNK_SIZE)
+            
+#             # Assuming 16kHz sample rate for Deepgram (model specific)
+#             # Calculate approximate audio duration (in seconds)
+#             # 16-bit audio = 2 bytes per sample
+#             audio_duration = len(audio_data) / (16000 * 2)  
+            
+#             # Calculate sleep time between chunks
+#             # Use 0.5x multiplier for slightly faster than real-time delivery
+#             sleep_time = (audio_duration / total_chunks) * 0.5
+            
+#             logger.info(f"Audio duration: {audio_duration:.2f}s, "
+#                        f"Chunks: {total_chunks}, "
+#                        f"Sleep time: {sleep_time:.4f}s")
+
+#             # Stream chunks with proper timing
+#             for i in range(0, len(audio_data), CHUNK_SIZE):
+#                 chunk = audio_data[i:i + CHUNK_SIZE]
+#                 if chunk:
+#                     yield chunk
+#                     await asyncio.sleep(sleep_time)
+
+#         except Exception as e:
+#             logger.error(f"Error in Deepgram audio stream: {str(e)}")
+#             raise

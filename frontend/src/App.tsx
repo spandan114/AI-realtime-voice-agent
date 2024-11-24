@@ -9,25 +9,18 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [streamError, setStreamError] = useState('');
+  
   const audioContextRef = useRef<AudioContext | null>(null);
-  const audioQueueRef = useRef<string[]>([]); // Store audio chunks as ref
-  const isProcessingRef = useRef(false); // Track if we're currently processing audio
+  const audioBufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioQueueRef = useRef<ArrayBuffer[]>([]);
+  const isProcessingRef = useRef(false);
 
   // Initialize AudioContext lazily
   const getAudioContext = () => {
-    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+    if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
     }
     return audioContextRef.current;
-  };
-
-  // Resume AudioContext if suspended
-  const ensureAudioContext = async () => {
-    const ctx = getAudioContext();
-    if (ctx.state === 'suspended') {
-      await ctx.resume();
-    }
-    return ctx;
   };
 
   const { error: socketError, connect, disconnect, sendMessage } = useWebSocket({
@@ -46,7 +39,6 @@ function App() {
       data.arrayBuffer().then(buffer => {
         try {
           const audioData = new Uint8Array(buffer);
-          console.log('Sending audio data, size:', audioData.length);
           sendMessage(audioData);
         } catch (err) {
           console.error('Error sending audio data:', err);
@@ -56,17 +48,80 @@ function App() {
     }
   });
 
+  const playNextChunk = async () => {
+    if (isProcessingRef.current || audioQueueRef.current.length === 0) {
+      return;
+    }
+
+    isProcessingRef.current = true;
+    setIsPlaying(true);
+
+    try {
+      const ctx = getAudioContext();
+      const chunk = audioQueueRef.current.shift()!;
+      
+      // Stop any currently playing audio
+      if (audioBufferSourceRef.current) {
+        try {
+          audioBufferSourceRef.current.stop();
+        } catch (e) {
+          // Ignore stop errors
+        }
+      }
+
+      const audioBuffer = await ctx.decodeAudioData(chunk.slice(0));
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+      
+      audioBufferSourceRef.current = source;
+
+      source.onended = () => {
+        isProcessingRef.current = false;
+        audioBufferSourceRef.current = null;
+        
+        if (audioQueueRef.current.length > 0) {
+          // Small delay before playing next chunk to prevent glitches
+          setTimeout(() => playNextChunk(), 20);
+        } else {
+          setIsPlaying(false);
+        }
+      };
+
+      await ctx.resume();
+      source.start(0);
+    } catch (err) {
+      console.error("Error playing audio chunk:", err);
+      isProcessingRef.current = false;
+      setIsPlaying(false);
+      setStreamError('Failed to play audio chunk');
+      
+      // Try to play next chunk if available
+      if (audioQueueRef.current.length > 0) {
+        setTimeout(() => playNextChunk(), 100);
+      }
+    }
+  };
+
   async function handleWebSocketMessage(message: string) {
     try {
       const data = JSON.parse(message);
 
       if (data.type === 'audio_chunk') {
-        // Add chunk to the queue
-        audioQueueRef.current.push(data.data);
-        
-        // Start processing if not already processing
+        // Convert base64 to ArrayBuffer
+        const binary = atob(data.data);
+        const buffer = new ArrayBuffer(binary.length);
+        const bytes = new Uint8Array(buffer);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+
+        // Add to queue
+        audioQueueRef.current.push(buffer);
+
+        // Start playing if not already processing
         if (!isProcessingRef.current) {
-          processNextChunk();
+          playNextChunk();
         }
       } else if (data.type === 'audio_stream_end') {
         console.log("Audio stream complete");
@@ -79,53 +134,22 @@ function App() {
     }
   }
 
-  // Process audio chunks sequentially
-  const processNextChunk = async () => {
-    if (isProcessingRef.current || audioQueueRef.current.length === 0) {
-      return;
-    }
-
-    isProcessingRef.current = true;
-    setIsPlaying(true);
-
-    try {
-      const audioContext = await ensureAudioContext();
-      const chunk = audioQueueRef.current.shift()!;
-      
-      // Decode and play audio
-      const binary = atob(chunk);
-      const buffer = Uint8Array.from(binary, char => char.charCodeAt(0)).buffer;
-      const audioBuffer = await audioContext.decodeAudioData(buffer);
-
-      const bufferSource = audioContext.createBufferSource();
-      bufferSource.buffer = audioBuffer;
-      bufferSource.connect(audioContext.destination);
-
-      // Handle completion
-      bufferSource.onended = () => {
-        isProcessingRef.current = false;
-        setIsPlaying(false);
-
-        // Process next chunk if available
-        if (audioQueueRef.current.length > 0) {
-          processNextChunk();
-        }
-      };
-
-      bufferSource.start(0);
-    } catch (err) {
-      console.error("Error playing audio chunk:", err);
-      isProcessingRef.current = false;
-      setIsPlaying(false);
-    }
-  };
-
   const handleStartRecording = async () => {
     try {
-      await ensureAudioContext();
+      const ctx = getAudioContext();
+      await ctx.resume();
+      
       setStreamError('');
-      audioQueueRef.current = []; // Clear previous audio chunks
+      audioQueueRef.current = [];
       isProcessingRef.current = false;
+      
+      if (audioBufferSourceRef.current) {
+        try {
+          audioBufferSourceRef.current.stop();
+        } catch (e) {
+          // Ignore stop errors
+        }
+      }
       
       connect();
       startRecording();
@@ -145,6 +169,13 @@ function App() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (audioBufferSourceRef.current) {
+        try {
+          audioBufferSourceRef.current.stop();
+        } catch (e) {
+          // Ignore stop errors
+        }
+      }
       if (audioContextRef.current) {
         audioContextRef.current.close();
       }
