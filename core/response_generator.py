@@ -37,11 +37,9 @@ class ResponseGenerator:
         """Process streaming response and add complete sentences to queue"""
         try:
             processor = SentenceProcessor()
-            full_response = []
 
             # Process streaming response
             for chunk in self.provider.generate_response_stream(text):
-                full_response.append(chunk)
                 
                 # Process chunk into sentences
                 sentences = processor.process_chunk(chunk)
@@ -68,9 +66,6 @@ class ResponseGenerator:
                     "timestamp": int(time.time())
                 })
                 
-                
-            
-            logger.info(f"{Fore.GREEN}Complete response: {''.join(full_response)}{Fore.RESET}")
             
         except Exception as e:
             logger.error(f"{Fore.RED}Error generating response: {str(e)}{Fore.RESET}")

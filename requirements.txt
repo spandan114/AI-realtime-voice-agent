@@ -1,11 +1,7 @@
-langchain
-langchain-groq 
-langchain-openai 
 python-dotenv 
 colorama
 deepgram-sdk 
 numpy 
-pyaudio
 openai 
 wave
 fastapi
@@ -16,5 +12,3 @@ pydantic-settings
 pydub
 vosk
 webrtcvad
-confluent-kafka 
-kafka-python

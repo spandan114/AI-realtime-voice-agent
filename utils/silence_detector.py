@@ -16,7 +16,7 @@ class WebRTCVAD:
         """
         self.vad = webrtcvad.Vad(mode)
         self.sample_rate = 16000  # WebRTC VAD requires 8000, 16000, 32000, or 48000 Hz
-        self.frame_duration_ms = 30  # Frame duration in ms (10, 20, or 30)
+        self.frame_duration_ms = 20  # Frame duration in ms (10, 20, or 30)
         self.frame_size = int(self.sample_rate * self.frame_duration_ms / 1000) * 2  # Bytes per frame (16-bit PCM)
 
     def is_speech(self, audio_chunk):
@@ -62,3 +62,5 @@ class WebRTCVAD:
         audio = np.frombuffer(audio_chunk, dtype=np.int16)
         energy = np.sqrt(np.mean(audio**2))
         return energy < threshold
+
+

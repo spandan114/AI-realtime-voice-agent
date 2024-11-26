@@ -7,9 +7,12 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str
     DEEPGRAM_API_KEY: str
     HF_TOKEN: str
+    ASSEMBLYAI_API_KEY:str
     LANGCHAIN_PROJECT: str
     LANGCHAIN_TRACING_V2: str = "false"
     PYTHONDONTWRITEBYTECODE: int = 1
+    REDIS_HOST: str
+    REDIS_PORT: int
 
     def configure_environment(self):
         """Set up environment-specific configurations"""
