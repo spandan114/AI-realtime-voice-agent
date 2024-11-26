@@ -1,78 +1,37 @@
-# Voice Agent API
+# Voice Agent 
 
-Real-time voice-to-voice communication API using FastAPI and Socket.IO. This project enables bidirectional audio streaming between clients and an AI assistant, featuring real-time transcription, natural language processing, and text-to-speech capabilities.
+A real-time voice-to-voice conversation system that enables natural, fluid interactions with AI. This system processes human speech, understands context, and responds with natural-sounding voice, all in real-time.
 
-## How to start
 
-```
-uvicorn main:app --reload
-```
-
-## 🏗️ Project Structure
-
-```
-voice-agent/
-├── README.md
-├── requirements.txt
-├── .env
-├── main.py                    # Application entry point
-├── config/                    # Configuration management
-├── core/                     # Core business logic
-├── api/                      # API implementations
-├── services/                 # External service integrations
-├── utils/                    # Helper utilities
-└── tests/                    # Test suite
-```
-
-This architecture can be called:
-
-**Event-Driven Real-Time Audio Processing Architecture with Kafka.**
-
-### Key Features:
+## ✨ Features
 1. **Event-Driven**: The architecture revolves around the events of receiving audio chunks, processing them, and responding in real-time.
 2. **Real-Time**: It is designed to minimize latency, ensuring conversational interactions.
 3. **Audio Processing**: Handles audio streams, transcription, LLM responses, and TTS generation efficiently.
-4. **Kafka Integration**: Leverages Kafka as a distributed messaging system for decoupling producers (transcription, LLM responses) and consumers (TTS workers and WebSocket response handlers).
-5. **Scalable**: Kafka allows seamless horizontal scaling, supporting large numbers of simultaneous users.
-6. **Resilient**: Kafka ensures message durability, fault tolerance, and retry mechanisms, reducing the risk of data loss.
+4. **Redis Queue Integration**: Utilizes Redis queues for user-specific message handling, ensuring organized processing of transcriptions and responses. Each user gets their dedicated queue, preventing message mixing across different conversations.
+5. **FIFO Processing**: Maintains strict First-In-First-Out order for each user's responses, ensuring conversational coherence and natural dialogue flow.
+6. **Stateful Processing**: Redis queues maintain conversation state and message order per user, allowing for context-aware responses and proper sentence sequencing during TTS generation.
+7. **Lightweight**: Redis's in-memory nature provides extremely low latency for queue operations while maintaining message persistence.
+8. **User Isolation**: Dedicated queues per user ensure that concurrent conversations remain isolated and don't interfere with each other's processing flow.
+9. **Sentence-Level Processing:** Smart sentence boundary detection for natural speech synthesis
 
-### Directory Details
+## 🛠️ Built With
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [Socket.IO](https://socket.io/)
+- [OpenAI](https://openai.com/)
+- [Groq](https://groq.com/)
+- [Deepgram](https://deepgram.com/)
+- [React.js](https://react.dev/)
 
-- **config/**: Configuration and environment settings
-  - `settings.py`: Application configuration
-  - `logging_config.py`: Logging setup
-
-- **core/**: Core business logic
-  - `assistant.py`: Main assistant manager
-  - `audio_processor.py`: Audio processing
-  - `transcriber.py`: Speech-to-text services
-  - `llm.py`: Language model integration
-  - `tts.py`: Text-to-speech processing
-
-- **api/**: API layer
-  - `socket/`: Socket.IO implementation
-  - `rest/`: REST endpoints
-
-- **services/**: External service integrations
-  - `openai_service.py`: OpenAI integration
-  - `groq_service.py`: Groq integration
-  - `deepgram_service.py`: Deepgram integration
-
-- **utils/**: Helper utilities
-  - `audio.py`: Audio processing utilities
-  - `timer.py`: Performance timing
-  - `validators.py`: Input validation
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
 - Python 3.9+
-- FFmpeg (for audio processing)
 - API keys for:
   - OpenAI
-  - Groq (optional)
-  - Deepgram (optional)
+  - Groq 
+  - Deepgram 
 
 ### Installation
 
@@ -98,77 +57,176 @@ pip install -r requirements.txt
 OPENAI_API_KEY=your_openai_key
 GROQ_API_KEY=your_groq_key
 DEEPGRAM_API_KEY=your_deepgram_key
+REDIS_HOST="localhost"
+REDIS_PORT="6379"
 ```
 
 ### Running the Application
 
 1. Start the server:
 ```bash
-python main.py
+uvicorn main:app --reload
 ```
 
 2. The API will be available at:
-- Socket.IO: `ws://localhost:8000/socket.io/`
+- WebSocket: `ws://localhost:8000/ws`
 - REST API: `http://localhost:8000/`
-- Documentation: `http://localhost:8000/docs`
 
-## 📡 WebSocket Events
+3. Start frontend:
+```bash
+cd frontend
+npm run dev
+```
+
+4. The UI will be available at:
+- `http://127.0.0.1:5173/`
+
+## System Architecture
+
+### Flow Diagram
+```mermaid
+flowchart TD
+    subgraph Frontend
+        mic[Microphone Input]
+        audioPlayer[Audio Player]
+    end
+
+    subgraph Socket Server
+        ws[WebSocket Server]
+    end
+
+    subgraph Backend Processing
+        dg[Deepgram Realtime API]
+        pause[Pause Detection\n1sec threshold]
+        llm[LLM Stream]
+        sc[Sentence Collector]
+        complete{Complete\nSentence?}
+    end
+
+    subgraph Queue System
+        redis[Redis Queue]
+        worker[Queue Worker]
+        processing{Currently\nProcessing?}
+    end
+
+    subgraph TTS System
+        tts[TTS Generator]
+    end
+
+    mic -->|Audio Chunks| ws
+    ws -->|Forward Audio| dg
+    dg -->|Transcript| pause
+    pause -->|If pause detected| llm
+    llm -->|Text Chunks| sc
+    sc --> complete
+    complete -->|No| sc
+    complete -->|Yes| redis
+    redis --> worker
+    worker --> processing
+    processing -->|Yes| worker
+    processing -->|No| tts
+    tts -->|Audio Stream| audioPlayer
+
+    classDef primary fill:#f5f5f5,stroke:#333,stroke-width:2px
+    classDef system fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
+    class mic,audioPlayer primary
+    class ws,dg,llm,tts system
+```
+
+### Sequence Diagram
+```mermaid
+sequenceDiagram
+    participant Client as Frontend Client
+    participant WS as WebSocket Server
+    participant DG as Deepgram API
+    participant LLM as LLM Service
+    participant SC as Sentence Collector
+    participant RQ as Redis Queue
+    participant Worker as Queue Worker
+    participant TTS as TTS Generator
+
+    note over Client,TTS: Voice Processing Flow
+    
+    loop Audio Streaming
+        Client->>+WS: Stream microphone chunks
+        WS->>+DG: Forward audio chunks
+        DG->>-WS: Return real-time transcript
+        
+        alt 1 second pause detected
+            WS->>+LLM: Send transcript
+            LLM-->>-SC: Stream response chunks
+            
+            loop Sentence Formation
+                SC->>SC: Collect and check for<br/>complete sentence
+                
+                alt Complete sentence detected
+                    SC->>RQ: Push sentence to queue
+                end
+            end
+        end
+    end
+    
+    loop Queue Processing
+        Worker->>RQ: Check for new sentences
+        
+        alt Queue not empty
+            RQ-->>Worker: Return next sentence
+            
+            alt No ongoing TTS processing
+                Worker->>+TTS: Generate audio
+                TTS-->>-Client: Stream audio chunks
+            else TTS in progress
+                Worker->>Worker: Wait for current<br/>TTS to complete
+            end
+        end
+    end
+
+    note over Client,TTS: FIFO order maintained for sentence processing
+```
+
+## Component Description
+
+### Frontend
+- Handles microphone input capture
+- Streams audio chunks to WebSocket server
+- Plays received audio responses
+
+### Socket Server
+- Manages WebSocket connections
+- Routes audio chunks to Deepgram API
+- Handles real-time communication
+
+### Backend Processing
+- Integrates with Deepgram for real-time transcription
+- Implements 1-second pause detection
+- Processes transcripts through LLM
+- Collects and validates complete sentences
+
+### Queue System
+- Redis-based FIFO queue
+- Ensures ordered processing of responses
+- Manages TTS processing states
+
+### TTS System
+- Generates audio from text responses
+- Streams audio chunks back to frontend
+- Maintains sequential processing
+
+<!-- ## 📡 WebSocket Events
 
 ### Client to Server
 
-- `audio_stream`: Send audio chunks
-  ```javascript
-  socket.emit('audio_stream', {
-    audio: base64EncodedAudio
-  });
-  ```
-
-- `end_stream`: Signal end of audio stream
-  ```javascript
-  socket.emit('end_stream');
-  ```
+ TODO - ADD
 
 ### Server to Client
 
-- `audio_response`: Receive audio responses
-  ```javascript
-  socket.on('audio_response', (data) => {
-    const { audio, text } = data;
-    // Process audio response
-  });
-  ```
+ TODO - ADD -->
 
-- `error`: Error notifications
-  ```javascript
-  socket.on('error', (data) => {
-    console.error(data.message);
-  });
-  ```
 
-## 🔧 Configuration
+## ⚠️ Known Issues
 
-Configure service providers in `config/settings.py`:
-
-```python
-TRANSCRIPTION_PROVIDER = "openai"  # openai, groq, or deepgram
-TTS_PROVIDER = "openai"           # openai or deepgram
-LLM_MODEL = "gpt-4-turbo-preview" # or other models
-```
-
-## 🧪 Testing
-
-Run the test suite:
-
-```bash
-pytest tests/
-```
-
-Run specific tests:
-
-```bash
-pytest tests/test_audio.py
-pytest tests/test_transcription.py
-```
+- Nested websocket (Deepgram) can cause scalability issue
+- Socket connection rate limit can cause issue in sclale
 
 ## 🤝 Contributing
 
@@ -180,37 +238,7 @@ pytest tests/test_transcription.py
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🛠️ Built With
-
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [Socket.IO](https://socket.io/)
-- [OpenAI](https://openai.com/)
-- [Groq](https://groq.com/)
-- [Deepgram](https://deepgram.com/)
-
-## ✨ Features
-
-- Real-time audio streaming
-- Automatic speech recognition
-- Natural language processing
-- Text-to-speech synthesis
-- Multiple provider support
-- Session management
-- Error handling and logging
-- Performance monitoring
-
-## 📚 Documentation
-
-For detailed API documentation, visit:
-- API Docs: `http://localhost:8000/docs`
-- Socket.IO Events: See WebSocket Events section above
-
-## ⚠️ Known Issues
-
-- List any known issues or limitations
-- Provide workarounds if available
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -219,5 +247,6 @@ For detailed API documentation, visit:
 
 ## 📞 Contact
 
-Your Name - [@yourusername](https://twitter.com/yourusername)
-Project Link: [https://github.com/yourusername/voice-agent](https://github.com/yourusername/voice-agent)
+Linkedin - [@Spandan Joshi](www.linkedin.com/in/spandan-joshi-39ba94171)
+Project Link: [https://github.com/spandan114/AI-realtime-voice-agent](https://github.com/spandan114/AI-realtime-voice-agent)
+

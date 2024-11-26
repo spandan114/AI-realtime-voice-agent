@@ -1,28 +1,3 @@
-"""
-Text-to-Speech (TTS) System
-==========================
-
-This system converts text to speech using either OpenAI or Deepgram's TTS services.
-It processes text in a pipeline:
-
-Flow:
-1. Input text is split into sentences to generate audio faster
-2. Sentences are queued for processing
-3. Audio files are generated for each sentence
-4. Audio files are played in sequence
-5. Files are automatically cleaned up after playback
-
-Architecture:
-------------
-                Text Input
-                    ↓
-            Sentence Splitter
-                    ↓
-            [Sentence Queue] → TTS Worker → Creates audio files
-                    ↓
-            [Audio Queue] → Playback Worker → Plays and deletes files
-"""
-
 import os
 import asyncio
 from colorama import Fore
