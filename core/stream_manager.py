@@ -95,6 +95,7 @@ class AudioStreamManager:
     async def process_audio(self, client_id: str, websocket: WebSocket):
 
         try:
+
             while self.is_running:
                 try:
                     # Check for cancellation
@@ -105,7 +106,7 @@ class AudioStreamManager:
 
                     if self.transcriber.transcription_complete and len(self.transcriber.is_finals) > 0:
                         utterance = " ".join(self.transcriber.is_finals)
-                        await self.response_generator.process_response(utterance, client_id)
+                        await self.response_generator.process_response(utterance, client_id, websocket)
                         await self.transcriber.reset()
 
                     if audio_chunk.size > 0:

@@ -1,18 +1,37 @@
-version: '3.7'
-services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:latest
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-    ports:
-      - 2181:2181
+version: '3.8'
 
-  kafka:
-    image: confluentinc/cp-kafka:latest
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+services:
+  # backend:
+  #   build: .
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
+  #     - GROQ_API_KEY=${GROQ_API_KEY}
+  #     - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #     - LANGCHAIN_PROJECT=""
+  #     - HF_TOKEN=""
+  #     - PYTHONDONTWRITEBYTECODE=1
+  #   volumes:
+  #     - .:/app
+  #   command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+  #   depends_on:
+  #     - redis
+
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "5173:5173"
+  #   environment:
+  #     - VITE_API_URL=http://localhost:8000
+  #   volumes:
+  #     - ./frontend:/app
+  #     - /app/node_modules
+  #   command: npm run dev -- --host
+
+  redis:
+    image: redis:latest
     ports:
-      - 9092:9092
+      - "6379:6379"

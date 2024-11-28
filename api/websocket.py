@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from services.websocket_manager import ConnectionManager
 from config.logging import get_logger
@@ -36,7 +36,7 @@ async def audio_websocket_endpoint(websocket: WebSocket, client_id: str):
     # Get Redis manager from application state
     redis_manager = RedisManager()
     queue_manager = QueueManager(redis_manager)
-    transcriber = DeepgramTranscriber(api_key=setting.DEEPGRAM_API_KEY)
+    transcriber = DeepgramTranscriber(setting.DEEPGRAM_API_KEY,websocket)
     stream_manager = AudioStreamManager(redis_manager, queue_manager, transcriber, manager)
     await manager.connect(websocket)
     tasks: list[Optional[asyncio.Task]] = []

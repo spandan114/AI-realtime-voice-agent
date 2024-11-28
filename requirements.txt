@@ -3,6 +3,8 @@ colorama
 deepgram-sdk 
 numpy 
 openai 
+groq
+redis
 wave
 fastapi
 uvicorn
@@ -12,3 +14,4 @@ pydantic-settings
 pydub
 vosk
 webrtcvad
+coloredlogs

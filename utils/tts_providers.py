@@ -89,7 +89,7 @@ class AsyncDeepgramTTSProvider:
                     while len(current_chunk) >= CHUNK_SIZE:
                         yield current_chunk[:CHUNK_SIZE]
                         current_chunk = current_chunk[CHUNK_SIZE:]
-                        await asyncio.sleep(0.05)  # Fixed sleep time for consistent delivery
+                        await asyncio.sleep(0.07)  # Fixed sleep time for consistent delivery
 
             # Send any remaining data
             if current_chunk:

@@ -5,13 +5,14 @@ from deepgram import (
     LiveTranscriptionEvents,
     LiveOptions
 )
+from fastapi.websockets import WebSocket
 import numpy as np
 from config.logging import get_logger
 
 logger = get_logger(__name__)
 
 class DeepgramTranscriber:
-    def __init__(self, api_key):
+    def __init__(self, api_key, websocket: WebSocket):
         self.api_key = api_key
         self.is_finals = []
         self.dg_connection = None
@@ -19,6 +20,7 @@ class DeepgramTranscriber:
         # Create and initialize transcriber
         self.deepgram = DeepgramClient(self.api_key, self.config)
         self.transcription_complete = False
+        self.websocket = websocket
         
     async def initialize(self):
         """ Initialize the Deepgram client and set up event handlers """
@@ -68,6 +70,7 @@ class DeepgramTranscriber:
         """Clean up resources"""
         if self.dg_connection:
             await self.dg_connection.finish()
+            await self.websocket.send_json({"type": "deepgram_connection_closed"})
         print("Finished")
 
     async def transcribe(self, audio_array: np.ndarray):
@@ -94,6 +97,8 @@ class DeepgramTranscriber:
     """
     async def on_open(self, *args, **kwargs):
         print("Connection Open")
+        await self.websocket.send_json({"type": "deepgram_connection_open"})
+        
         
     async def on_message(self, _self, result, **kwargs):
         sentence = result.channel.alternatives[0].transcript
@@ -127,6 +132,7 @@ class DeepgramTranscriber:
         
     async def on_error(self, _self, error, **kwargs):
         print(f"Handled Error: {error}")
+        await self.websocket.send_json({"type": "deepgram_connection_closed"})
         
     async def on_unhandled(self, _self, unhandled, **kwargs):
         print(f"Unhandled Websocket Message: {unhandled}")

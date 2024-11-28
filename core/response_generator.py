@@ -1,5 +1,6 @@
 import os
 import time
+from fastapi.websockets import WebSocket
 from utils.sentence_processor import SentenceProcessor
 from colorama import Fore
 from utils.llm_providers import BaseLLMProvider, OpenAIProvider, GroqProvider
@@ -33,11 +34,11 @@ class ResponseGenerator:
             
         return provider_class(api_key)
     
-    async def process_response(self, text: str, user_id: str) -> None:
+    async def process_response(self, text: str, user_id: str, websocket: WebSocket) -> None:
         """Process streaming response and add complete sentences to queue"""
         try:
             processor = SentenceProcessor()
-
+            await websocket.send_json({"type": "response_generation_start", "text": text})
             # Process streaming response
             for chunk in self.provider.generate_response_stream(text):
                 
