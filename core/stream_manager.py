@@ -11,14 +11,15 @@ import asyncio
 logger = get_logger(__name__)
 
 class AudioStreamManager:
-    def __init__(self, redis_manager:RedisManager, queue_manager:QueueManager, transcriber:DeepgramTranscriber, manager: ConnectionManager):
+    def __init__(self, redis_manager:RedisManager, queue_manager:QueueManager, transcriber:DeepgramTranscriber, manager: ConnectionManager, client_id:str):
         self.redis_manager = redis_manager
         self.queue_manager = queue_manager
         self.transcriber = transcriber
         self.manager = manager
-        self.tts_generator = TextToSpeechHandler(provider_name="deepgram")
+        self.client_id = client_id
+        self.tts_generator = TextToSpeechHandler(queue_manager, client_id, provider_name="deepgram")
         self.current_message = None
-        self.response_generator = ResponseGenerator(provider="groq", connection_manager=redis_manager)
+        self.response_generator = ResponseGenerator(provider="openai", connection_manager=redis_manager)
         # Add cancellation flags
         self.is_running = True
         self._cleanup_event = asyncio.Event()
@@ -51,7 +52,7 @@ class AudioStreamManager:
                         except asyncio.TimeoutError:
                             continue
 
-                        self.current_message = await self.queue_manager.get(client_id)
+                        # self.current_message = await self.queue_manager.get(client_id)
                         
                         if self.current_message and self.current_message['type'] == 'sentence':
                             logger.info(f"Processing message for {client_id}: {self.current_message['content'][:50]}...")

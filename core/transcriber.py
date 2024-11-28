@@ -70,7 +70,6 @@ class DeepgramTranscriber:
         """Clean up resources"""
         if self.dg_connection:
             await self.dg_connection.finish()
-            await self.websocket.send_json({"type": "deepgram_connection_closed"})
         print("Finished")
 
     async def transcribe(self, audio_array: np.ndarray):

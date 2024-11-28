@@ -15,6 +15,7 @@ class ResponseGenerator:
     def __init__(self,connection_manager, provider: str = "groq"):
         self.provider = self._initialize_provider(provider)
         self.queue_manager = QueueManager(connection_manager)
+        self.conversations = []
         
     def _initialize_provider(self, provider: str) -> BaseLLMProvider:
         """Initialize the specified LLM provider"""
@@ -37,14 +38,14 @@ class ResponseGenerator:
     async def process_response(self, text: str, user_id: str, websocket: WebSocket) -> None:
         """Process streaming response and add complete sentences to queue"""
         try:
+            self.conversations.append({"role":"user","content":text})
             processor = SentenceProcessor()
             await websocket.send_json({"type": "response_generation_start", "text": text})
             # Process streaming response
-            for chunk in self.provider.generate_response_stream(text):
+            async for chunk in self.provider.generate_response_stream(text,self.conversations):
                 
                 # Process chunk into sentences
                 sentences = processor.process_chunk(chunk)
-                
                 # Add complete sentences to queue
                 for sentence in sentences:
                     logger.info(f"{Fore.GREEN}Send sentence for TTS: {sentence}{Fore.RESET}")
@@ -54,6 +55,11 @@ class ResponseGenerator:
                         "content": sentence,
                         "timestamp": int(time.time())
                     })
+
+            # complete response
+            complete_response = "".join(sentences) # Join the sentences.
+            self.conversations.append({"role":"agent","content":complete_response})
+            await websocket.send_json({"type": "response_generation_complete", "text": complete_response})
                     
             
             # Handle any remaining complete sentence
@@ -70,3 +76,6 @@ class ResponseGenerator:
             
         except Exception as e:
             logger.error(f"{Fore.RED}Error generating response: {str(e)}{Fore.RESET}")
+
+
+

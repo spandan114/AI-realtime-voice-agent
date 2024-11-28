@@ -23,8 +23,8 @@ const vadFilter = (analyser: React.MutableRefObject<AnalyserNode | null>): boole
 
 export const useVoiceRecorder = ({
   sampleRate = 16000,
-  timeSlice = 250,        // 250ms chunks
-  bufferSize = 4096,      // Processing buffer size
+  timeSlice = 125,        // 250ms chunks
+  bufferSize = 2048,      // Processing buffer size
   numberOfChannels = 1,   // Mono audio
   bitsPerSecond = 128000, // Target bitrate
   onAudioData,
@@ -48,9 +48,9 @@ export const useVoiceRecorder = ({
         audio: {
           sampleRate,
           channelCount: numberOfChannels,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
       });
 

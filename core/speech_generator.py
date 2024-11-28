@@ -1,18 +1,19 @@
 import os
 import asyncio
-from colorama import Fore
 from utils.tts_providers import AsyncBaseTTSProvider, AsyncOpenAITTSProvider, AsyncDeepgramTTSProvider
 from services.websocket_manager import ConnectionManager
 from config.logging import get_logger
 import base64
-from typing import Optional
 from fastapi.websockets import WebSocket
+from utils.queue_manager import QueueManager
 
 logger = get_logger(__name__)
 
 class TextToSpeechHandler:
-    def __init__(self, provider_name: str = "openai", timer=None, **kwargs):
+    def __init__(self,queue_manager: QueueManager, client_id, provider_name: str = "openai", timer=None, **kwargs):
         self.timer = timer
+        self.client_id = client_id
+        self.queue_manager = queue_manager
         self.provider = self._setup_provider(provider_name, **kwargs)
         self.websocket_manager = ConnectionManager()
         self.is_streaming = False
@@ -47,7 +48,8 @@ class TextToSpeechHandler:
         if not text.strip():
             logger.warning("Empty text provided for streaming")
             return False
-
+        
+        remaining_sentence_chunk = await self.queue_manager.get_length(self.client_id)
         self.is_streaming = True
         self.streaming_complete.clear()  # Reset completion event
         chunk_count = 0
@@ -57,7 +59,8 @@ class TextToSpeechHandler:
             
             await websocket.send_json({
                 "type": "audio_stream_start",
-                "text": text
+                "text": text,
+                "remaining_sentence_chunk_count":remaining_sentence_chunk
             })
             
             async for chunk in self.provider.generate_audio_stream(text):
@@ -72,7 +75,7 @@ class TextToSpeechHandler:
                     await websocket.send_json({
                         "type": "audio_chunk",
                         "data": base64_chunk,
-                        "chunk_number": chunk_count
+                        "chunk_number": chunk_count,
                     })
                     
                     await asyncio.sleep(0.01)
@@ -80,7 +83,8 @@ class TextToSpeechHandler:
             if self.is_streaming:
                 await websocket.send_json({
                     "type": "audio_stream_end",
-                    "total_chunks": chunk_count
+                    "total_chunks": chunk_count,
+                    "remaining_sentence_chunk_count":remaining_sentence_chunk
                 })
                 
                 # Wait for client to confirm playback completion
@@ -90,12 +94,6 @@ class TextToSpeechHandler:
                 
         except Exception as e:
             logger.error(f"Error streaming audio: {str(e)}")
-            await websocket.send_json({
-                "type": "audio_stream_error",
-                "error": str(e),
-                "chunk_number": chunk_count
-            })
-            
             return False
             
         finally:

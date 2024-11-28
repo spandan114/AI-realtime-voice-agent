@@ -6,7 +6,7 @@ class AudioProcessor extends AudioWorkletProcessor {
     this.sampleRate = options.processorOptions.sampleRate || 16000;
     this.timeSlice = options.processorOptions.timeSlice || 250;
     this.numberOfChannels = options.processorOptions.numberOfChannels || 1;
-    this.bufferSize = options.processorOptions.bufferSize || 8192;
+    this.bufferSize = options.processorOptions.bufferSize || 2048;
     
     // Calculate chunk size based on timeSlice
     this.chunkSize = Math.floor((this.timeSlice * this.sampleRate) / 1000);

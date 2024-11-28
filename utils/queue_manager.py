@@ -67,6 +67,7 @@ class QueueManager:
             if not message or not isinstance(message, dict):
                 raise QueueOperationError("Invalid message format")
             
+            self.logger.info(f"Adding message to queue for user: {user_id}")
             queue_key = self.get_queue_key(user_id)
             serialized_message = json.dumps(message)
             await self.redis_client.lpush(queue_key, serialized_message)

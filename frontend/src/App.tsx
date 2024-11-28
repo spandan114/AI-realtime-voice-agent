@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { TbMicrophone } from "react-icons/tb";
-import { FaStopCircle } from "react-icons/fa";
+import { FaStopCircle, FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 import BlobAnimation from "./components/AiAnimation";
 import { useVoiceRecorder } from "./hooks/useVoiceRecorder";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -8,9 +8,14 @@ import { useWebSocket } from "./hooks/useWebSocket";
 function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [websocketReady, setWebsocketReady] = useState(false);
   const [streamError, setStreamError] = useState('');
+  const [isMuted, setIsMuted] = useState(false);
+  const [isFirstAudioChunkReceived, setFirstAudioChunkReceived] = useState(false);
+  const [responseTime, setResponseTime] = useState(0);
   
   const audioContextRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
   const audioBufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const isProcessingRef = useRef(false);
@@ -19,12 +24,16 @@ function App() {
   const getAudioContext = () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      // Create gain node for muting
+      gainNodeRef.current = audioContextRef.current.createGain();
+      gainNodeRef.current.connect(audioContextRef.current.destination);
     }
     return audioContextRef.current;
   };
 
+
   const { error: socketError, connect, disconnect, sendMessage } = useWebSocket({
-    url: "ws://localhost:8000/ws/audio/1",
+    url: `ws://localhost:8000/ws/audio/${Date.now()}`,
     onOpen: () => console.log("Connected!"),
     onMessage: handleWebSocketMessage,
     onError: (error) => {
@@ -38,8 +47,10 @@ function App() {
     onAudioData: (data) => {
       data.arrayBuffer().then(buffer => {
         try {
-          const audioData = new Uint8Array(buffer);
-          sendMessage(audioData);
+          // if(!isMuted){
+            const audioData = new Uint8Array(buffer);
+            sendMessage(audioData);
+          // }
         } catch (err) {
           console.error('Error sending audio data:', err);
           setStreamError('Failed to send audio data');
@@ -72,7 +83,9 @@ function App() {
       const audioBuffer = await ctx.decodeAudioData(chunk.slice(0));
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(ctx.destination);
+      
+      // Connect to gain node instead of destination
+      source.connect(gainNodeRef.current!);
       
       audioBufferSourceRef.current = source;
 
@@ -81,7 +94,6 @@ function App() {
         audioBufferSourceRef.current = null;
         
         if (audioQueueRef.current.length > 0) {
-          // Small delay before playing next chunk to prevent glitches
           setTimeout(() => playNextChunk(), 20);
         } else {
           setIsPlaying(false);
@@ -89,6 +101,8 @@ function App() {
       };
 
       await ctx.resume();
+      // Set initial gain based on mute state
+      gainNodeRef.current!.gain.value = isMuted ? 0 : 1;
       source.start(0);
     } catch (err) {
       console.error("Error playing audio chunk:", err);
@@ -96,7 +110,6 @@ function App() {
       setIsPlaying(false);
       setStreamError('Failed to play audio chunk');
       
-      // Try to play next chunk if available
       if (audioQueueRef.current.length > 0) {
         setTimeout(() => playNextChunk(), 100);
       }
@@ -106,9 +119,23 @@ function App() {
   async function handleWebSocketMessage(message: string) {
     try {
       const data = JSON.parse(message);
-
-      if (data.type === 'audio_chunk') {
+      if(data.type === 'deepgram_connection_open') {
+        setWebsocketReady(true)
+      }else if(data.type === 'response_generation_start') {
+        console.log("User: ",data.text)
+        window.responseStartTime = Date.now();
+      }else if(data.type === 'audio_stream_start') {
+        console.log("AI Assistant: ",data.text)
+      }else if (data.type === 'audio_chunk') {
         // Convert base64 to ArrayBuffer
+
+        if(!isFirstAudioChunkReceived){
+          const duration = Date.now() - window.responseStartTime;
+          setFirstAudioChunkReceived(true);
+          setResponseTime(duration)
+          window.responseStartTime = Date.now();
+        }
+
         const binary = atob(data.data);
         const buffer = new ArrayBuffer(binary.length);
         const bytes = new Uint8Array(buffer);
@@ -124,6 +151,10 @@ function App() {
           playNextChunk();
         }
       } else if (data.type === 'audio_stream_end') {
+        if(data.remaining_sentence_chunk_count === 0){
+          setFirstAudioChunkReceived(false)
+          console.log("Reset received chunk flag")
+        }
         console.log("Audio stream complete");
       } else if (data.type === 'audio_stream_error') {
         console.error("Stream error:", data.error);
@@ -164,6 +195,12 @@ function App() {
     stopRecording();
     disconnect();
     setIsRecording(false);
+    setWebsocketReady(false);
+    setIsPlaying(false);
+    setIsMuted(false);
+    setFirstAudioChunkReceived(false);
+    setStreamError('');
+    setResponseTime(0);
   };
 
   // Cleanup on unmount
@@ -181,6 +218,16 @@ function App() {
       }
     };
   }, []);
+
+
+  const toggleMute = () => {
+    if(isMuted){
+      startRecording();
+    }else{
+      stopRecording();
+    }
+    setIsMuted(!isMuted);
+  };
 
   return (
     <div className="container">
@@ -212,16 +259,13 @@ function App() {
           </div>
         )}
 
+        <p>{responseTime>0?`${responseTime}ms`:""}</p>
         <button className="cta-message">
-          {isRecording ? "I'm listening..." : "hit record! 🎯"}
+          {isRecording ? 
+          isMuted?"Microphone is muted":
+          isPlaying?"I'm speaking...":
+          !websocketReady?"Wait a second...": "I'm listening..." : "hit record! 🎯"}
         </button>
-
-        {isPlaying && (
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse" />
-            <span>Playing Audio...</span>
-          </div>
-        )}
         
         {streamError && (
           <div className="text-red-500">
@@ -242,12 +286,28 @@ function App() {
         )}
 
         {isRecording && (
+          <>
           <button
             className="stop-button"
             onClick={handleStopRecording}
           >
             <FaStopCircle />
           </button>
+
+
+          <button
+            className="stop-button"
+            onClick={toggleMute}
+          >
+            {isMuted ? (
+              <FaMicrophoneSlash  />
+            ) : (
+              <FaMicrophone  />
+            )}
+          </button>
+
+          </>
+
         )}
       </div>
     </div>

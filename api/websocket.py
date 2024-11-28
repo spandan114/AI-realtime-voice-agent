@@ -36,52 +36,135 @@ async def audio_websocket_endpoint(websocket: WebSocket, client_id: str):
     # Get Redis manager from application state
     redis_manager = RedisManager()
     queue_manager = QueueManager(redis_manager)
-    transcriber = DeepgramTranscriber(setting.DEEPGRAM_API_KEY,websocket)
-    stream_manager = AudioStreamManager(redis_manager, queue_manager, transcriber, manager)
-    await manager.connect(websocket)
-    tasks: list[Optional[asyncio.Task]] = []
+    transcriber = DeepgramTranscriber(setting.DEEPGRAM_API_KEY, websocket)
+    stream_manager = AudioStreamManager(redis_manager, queue_manager, transcriber, manager, client_id)
+    tasks: list[asyncio.Task] = []
+    
+    async def cancel_tasks():
+        """Helper function to cancel tasks properly"""
+        if tasks:
+            # Cancel all tasks
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            
+            # Wait for all tasks to complete their cancellation
+            await asyncio.gather(*tasks, return_exceptions=True)
+            tasks.clear()
+
     try:
-
+        await manager.connect(websocket)
         await transcriber.initialize()
-        # Create tasks
-        queue_task = asyncio.create_task(stream_manager.process_queue(client_id, websocket))
-        audio_task = asyncio.create_task(stream_manager.process_audio(client_id, websocket))
-        tasks = [queue_task, audio_task]
 
-        # Wait for tasks to complete
-        await asyncio.gather(*tasks)
+        # Create tasks with names for better debugging
+        queue_task = asyncio.create_task(
+            stream_manager.process_queue(client_id, websocket),
+            name=f"queue_task_{client_id}"
+        )
+        audio_task = asyncio.create_task(
+            stream_manager.process_audio(client_id, websocket),
+            name=f"audio_task_{client_id}"
+        )
+        tasks.extend([queue_task, audio_task])
+
+        # Wait for any task to complete or fail
+        done, pending = await asyncio.wait(
+            tasks,
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # If we get here, one of the tasks completed or failed
+        for task in done:
+            if task.exception():
+                raise task.exception()
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for {client_id}")
-        # Handle normal disconnection - clean disconnect flow
-        await stream_manager.cleanup()
-        await manager.disconnect(websocket)
-        await queue_manager.clear_user_queue(client_id)
-        # Cancel tasks after cleanup to ensure proper shutdown
-        for task in tasks:
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
+        
     except Exception as e:
-        # Handle unexpected errors
-        logger.error(f"Error in audio websocket: {e}")
-        # Initiate emergency cleanup
-        await stream_manager.cleanup()
-        for task in tasks:
-            if task and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-        await manager.disconnect(websocket)
-        await queue_manager.clear_user_queue(client_id)
-        raise  # Re-raise unexpected exceptions
+        logger.error(f"Error in audio websocket: {str(e)}")
+        # Optionally send error message to client
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "An error occurred in the connection"
+            })
+        except:
+            pass
+        raise  # Re-raise the exception after cleanup
 
     finally:
-        # Final cleanup for transcriber regardless of how we exit
-        await transcriber.cleanup()
+        # Comprehensive cleanup in specific order
+        try:
+            # 1. Cancel ongoing tasks
+            await cancel_tasks()
+            
+            # 2. Cleanup stream manager
+            await stream_manager.cleanup()
+            
+            # 3. Cleanup transcriber
+            await transcriber.cleanup()
+            
+            # 4. Clear queue
+            await queue_manager.clear_user_queue(client_id)
+            
+            # 5. Disconnect from WebSocket
+            await manager.disconnect(websocket)
+            
+        except Exception as cleanup_error:
+            logger.error(f"Error during cleanup for {client_id}: {str(cleanup_error)}")
+
+# @router.websocket("/ws/audio/{client_id}")
+# async def audio_websocket_endpoint(websocket: WebSocket, client_id: str):
+#     # Get Redis manager from application state
+#     redis_manager = RedisManager()
+#     queue_manager = QueueManager(redis_manager)
+#     transcriber = DeepgramTranscriber(setting.DEEPGRAM_API_KEY,websocket)
+#     stream_manager = AudioStreamManager(redis_manager, queue_manager, transcriber, manager,client_id)
+#     await manager.connect(websocket)
+#     tasks: list[Optional[asyncio.Task]] = []
+#     try:
+
+#         await transcriber.initialize()
+#         # Create tasks
+#         queue_task = asyncio.create_task(stream_manager.process_queue(client_id, websocket))
+#         audio_task = asyncio.create_task(stream_manager.process_audio(client_id, websocket))
+#         tasks = [queue_task, audio_task]
+
+#         # Wait for tasks to complete
+#         await asyncio.gather(*tasks)
+
+#     except WebSocketDisconnect:
+#         logger.info(f"WebSocket disconnected for {client_id}")
+#         # Handle normal disconnection - clean disconnect flow
+#         await stream_manager.cleanup()
+#         await manager.disconnect(websocket)
+#         await queue_manager.clear_user_queue(client_id)
+#         # Cancel tasks after cleanup to ensure proper shutdown
+#         for task in tasks:
+#             if task and not task.done():
+#                 task.cancel()
+#                 try:
+#                     await task
+#                 except asyncio.CancelledError:
+#                     pass
+
+#     except Exception as e:
+#         # Handle unexpected errors
+#         logger.error(f"Error in audio websocket: {e}")
+#         # Initiate emergency cleanup
+#         await stream_manager.cleanup()
+#         for task in tasks:
+#             if task and not task.done():
+#                 task.cancel()
+#                 try:
+#                     await task
+#                 except asyncio.CancelledError:
+#                     pass
+#         await manager.disconnect(websocket)
+#         await queue_manager.clear_user_queue(client_id)
+#         raise  # Re-raise unexpected exceptions
+
+#     finally:
+#         # Final cleanup for transcriber regardless of how we exit
+#         await transcriber.cleanup()
