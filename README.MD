@@ -37,8 +37,8 @@ A real-time voice-to-voice conversation system that enables natural, fluid inter
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/voice-agent.git
-cd voice-agent
+git clone https://github.com/spandan114/AI-realtime-voice-agent.git
+cd AI-realtime-voice-agent
 ```
 
 2. Create and activate virtual environment:
@@ -62,7 +62,6 @@ REDIS_PORT="6379"
 ```
 
 ### Running the Application
-
 1. Start the server:
 ```bash
 uvicorn main:app --reload
@@ -75,63 +74,19 @@ uvicorn main:app --reload
 3. Start frontend:
 ```bash
 cd frontend
+npm install
 npm run dev
 ```
-
 4. The UI will be available at:
 - `http://127.0.0.1:5173/`
+---------------------------------
+**OR**
+Run using docker:
+```bash
+docker compose up
+```
 
 ## System Architecture
-
-### Flow Diagram
-```mermaid
-flowchart TD
-    subgraph Frontend
-        mic[Microphone Input]
-        audioPlayer[Audio Player]
-    end
-
-    subgraph Socket Server
-        ws[WebSocket Server]
-    end
-
-    subgraph Backend Processing
-        dg[Deepgram Realtime API]
-        pause[Pause Detection\n1sec threshold]
-        llm[LLM Stream]
-        sc[Sentence Collector]
-        complete{Complete\nSentence?}
-    end
-
-    subgraph Queue System
-        redis[Redis Queue]
-        worker[Queue Worker]
-        processing{Currently\nProcessing?}
-    end
-
-    subgraph TTS System
-        tts[TTS Generator]
-    end
-
-    mic -->|Audio Chunks| ws
-    ws -->|Forward Audio| dg
-    dg -->|Transcript| pause
-    pause -->|If pause detected| llm
-    llm -->|Text Chunks| sc
-    sc --> complete
-    complete -->|No| sc
-    complete -->|Yes| redis
-    redis --> worker
-    worker --> processing
-    processing -->|Yes| worker
-    processing -->|No| tts
-    tts -->|Audio Stream| audioPlayer
-
-    classDef primary fill:#f5f5f5,stroke:#333,stroke-width:2px
-    classDef system fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
-    class mic,audioPlayer primary
-    class ws,dg,llm,tts system
-```
 
 ### Sequence Diagram
 ```mermaid
@@ -182,6 +137,57 @@ sequenceDiagram
     end
 
     note over Client,TTS: FIFO order maintained for sentence processing
+```
+
+
+### Flow Diagram
+```mermaid
+flowchart TD
+    subgraph Frontend
+        mic[Microphone Input]
+        audioPlayer[Audio Player]
+    end
+
+    subgraph Socket Server
+        ws[WebSocket Server]
+    end
+
+    subgraph Backend Processing
+        dg[Deepgram Realtime API]
+        pause[Pause Detection\n1sec threshold]
+        llm[LLM Stream]
+        sc[Sentence Collector]
+        complete{Complete\nSentence?}
+    end
+
+    subgraph Queue System
+        redis[Redis Queue]
+        worker[Queue Worker]
+        processing{Currently\nProcessing?}
+    end
+
+    subgraph TTS System
+        tts[TTS Generator]
+    end
+
+    mic -->|Audio Chunks| ws
+    ws -->|Forward Audio| dg
+    dg -->|Transcript| pause
+    pause -->|If pause detected| llm
+    llm -->|Text Chunks| sc
+    sc --> complete
+    complete -->|No| sc
+    complete -->|Yes| redis
+    redis --> worker
+    worker --> processing
+    processing -->|Yes| worker
+    processing -->|No| tts
+    tts -->|Audio Stream| audioPlayer
+
+    classDef primary fill:#f5f5f5,stroke:#333,stroke-width:2px
+    classDef system fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
+    class mic,audioPlayer primary
+    class ws,dg,llm,tts system
 ```
 
 ## Component Description

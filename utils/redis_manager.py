@@ -3,8 +3,6 @@ import redis.asyncio as redis
 import logging
 from threading import Event
 from dataclasses import dataclass
-from fastapi import WebSocket, WebSocketDisconnect
-import time
 import asyncio
 import traceback
 
@@ -46,7 +44,6 @@ class RedisManager:
         if not hasattr(self, 'initialized'):
             self.config = ConnectionConfig()
             self.redis_client: Optional[redis.Redis] = None
-            self.active_websockets: Dict[str, WebSocket] = {}
             self.stop_event = Event()
             self._setup_logging()
             self._connection_lock = asyncio.Lock()
@@ -87,64 +84,6 @@ class RedisManager:
                 self.logger.warning("Redis connection lost, attempting to reconnect...")
                 if not await self.connect_redis():
                     raise RedisConnectionError("Failed to reconnect to Redis")
-
-    async def register_websocket(self, client_id: str, websocket: WebSocket) -> None:
-        """
-        Register a new WebSocket connection
-        
-        Args:
-            client_id: Unique client identifier
-            websocket: WebSocket connection to register
-            
-        Raises:
-            WebSocketError: If registration fails
-        """
-        try:
-            await websocket.accept()
-            self.active_websockets[client_id] = websocket
-            self.logger.info(f"WebSocket registered for client: {client_id}")
-            
-            # Start heartbeat for this connection
-            asyncio.create_task(self._websocket_heartbeat(client_id))
-            
-        except WebSocketDisconnect:
-            self.logger.warning(f"WebSocket disconnected during registration: {client_id}")
-            await self.unregister_websocket(client_id)
-        except Exception as e:
-            self.logger.error(f"Failed to register WebSocket for {client_id}: {str(e)}\n{traceback.format_exc()}")
-            raise WebSocketError(f"WebSocket registration failed: {str(e)}")
-
-    async def unregister_websocket(self, client_id: str) -> None:
-        """
-        Unregister a WebSocket connection
-        
-        Args:
-            client_id: Client identifier to unregister
-        """
-        try:
-            if client_id in self.active_websockets:
-                websocket = self.active_websockets[client_id]
-                try:
-                    await websocket.close()
-                except Exception as e:
-                    self.logger.warning(f"Error closing WebSocket for {client_id}: {str(e)}")
-                finally:
-                    del self.active_websockets[client_id]
-                    self.logger.info(f"WebSocket unregistered for client: {client_id}")
-        except Exception as e:
-            self.logger.error(f"Error unregistering WebSocket for {client_id}: {str(e)}")
-
-    async def _websocket_heartbeat(self, client_id: str) -> None:
-        """Maintain WebSocket connection with periodic heartbeats"""
-        while client_id in self.active_websockets and not self.stop_event.is_set():
-            try:
-                websocket = self.active_websockets[client_id]
-                await websocket.send_text("heartbeat")
-                await asyncio.sleep(self.config.heartbeat_interval)
-            except Exception as e:
-                self.logger.warning(f"Heartbeat failed for {client_id}: {str(e)}")
-                await self.unregister_websocket(client_id)
-                break
 
     async def connect_redis(self) -> bool:
         """
@@ -216,10 +155,6 @@ class RedisManager:
         try:
             self.stop_event.set()
             
-            # Close all WebSocket connections
-            for client_id in list(self.active_websockets.keys()):
-                await self.unregister_websocket(client_id)
-                
             # Close Redis connection
             if self.redis_client:
                 await self.redis_client.close()
