@@ -78,7 +78,7 @@ class DeepgramTranscriber:
                 await self.initialize()
             
             await self.dg_connection.send(audio_array.tobytes())
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
             # return self.transcriptions
             
         except Exception as e:

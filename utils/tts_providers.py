@@ -20,7 +20,7 @@ class AsyncBaseTTSProvider(ABC):
 class AsyncOpenAITTSProvider(AsyncBaseTTSProvider):
     def __init__(self, api_key: str):
         self.client = AsyncOpenAI(api_key=api_key)
-        self.voice = "alloy"
+        self.voice = "onyx"
         
     async def generate_audio_stream(self, text: str) -> AsyncGenerator[bytes, None]:
         try:
@@ -62,38 +62,46 @@ class AsyncOpenAITTSProvider(AsyncBaseTTSProvider):
             raise
 
 
-class AsyncDeepgramTTSProvider:
+class AsyncDeepgramTTSProvider(AsyncBaseTTSProvider):
     def __init__(self, api_key: str):
         config = DeepgramClientOptions()
         self.client = DeepgramClient(api_key, config)
-        self.model = "aura-asteria-en"
+        self.model = "aura-luna-en"
 
     async def generate_audio_stream(self, text: str) -> AsyncGenerator[bytes, None]:
-        """Generate streaming audio from text using async REST API"""
+        """Generate streaming audio from text using async REST API with dynamic sleep time"""
         try:
             options = SpeakOptions(
                 model=self.model
             )
 
-            CHUNK_SIZE = 16 * 1024  # 16KB chunks
-            current_chunk = b''
+            CHUNK_SIZE = 16 * 1024  # 16KB chunks for consistency with network patterns
+            total_audio = b''  # Store complete audio for duration calculation
             
             response = await self.client.speak.asyncrest.v("1").stream_raw(
                 {"text": text}, 
                 options
             )
 
+            # First pass: collect total audio for duration calculation
             async for chunk in response.aiter_bytes():
                 if chunk:
-                    current_chunk += chunk
-                    while len(current_chunk) >= CHUNK_SIZE:
-                        yield current_chunk[:CHUNK_SIZE]
-                        current_chunk = current_chunk[CHUNK_SIZE:]
-                        await asyncio.sleep(0.07)  # Fixed sleep time for consistent delivery
+                    total_audio += chunk
 
-            # Send any remaining data
-            if current_chunk:
-                yield current_chunk
+            # Calculate audio duration and optimal sleep time
+            # Deepgram uses 16kHz sample rate with 16-bit audio
+            audio_duration = len(total_audio) / (16000 * 2)  # 16kHz * 16bit
+            total_chunks = math.ceil(len(total_audio) / CHUNK_SIZE)
+            sleep_time = (audio_duration / total_chunks) * 0.5  # 50% speed for smooth delivery
+
+            # Second pass: yield chunks with dynamic sleep
+            current_position = 0
+            while current_position < len(total_audio):
+                chunk = total_audio[current_position:current_position + CHUNK_SIZE]
+                if chunk:
+                    yield chunk
+                    current_position += CHUNK_SIZE
+                    await asyncio.sleep(sleep_time)
 
             await response.aclose()
 

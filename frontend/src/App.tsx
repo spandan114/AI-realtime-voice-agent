@@ -94,7 +94,7 @@ function App() {
         audioBufferSourceRef.current = null;
         
         if (audioQueueRef.current.length > 0) {
-          setTimeout(() => playNextChunk(), 20);
+           playNextChunk()
         } else {
           setIsPlaying(false);
         }
@@ -111,7 +111,7 @@ function App() {
       setStreamError('Failed to play audio chunk');
       
       if (audioQueueRef.current.length > 0) {
-        setTimeout(() => playNextChunk(), 100);
+         playNextChunk()
       }
     }
   };

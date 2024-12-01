@@ -2,6 +2,7 @@
 
 A real-time voice-to-voice conversation system that enables natural, fluid interactions with AI. This system processes human speech, understands context, and responds with natural-sounding voice, all in real-time.
 
+![Video Name](./voice_agent_demo.mp4)
 
 ## ✨ Features
 1. **Event-Driven**: The architecture revolves around the events of receiving audio chunks, processing them, and responding in real-time.

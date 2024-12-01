@@ -88,7 +88,7 @@ class TextToSpeechHandler:
                 })
                 
                 # Wait for client to confirm playback completion
-                await asyncio.sleep(0.1)  # Small buffer for network latency
+                await asyncio.sleep(0.05)  # Small buffer for network latency
                 logger.info(f"Successfully streamed {chunk_count} audio chunks")
                 return True
                 
